@@ -74,9 +74,32 @@ pub fn render_pdf_page_with_mode(
     }
 
     let page = doc.GetPage(page_idx)?;
+    let page_size = page.Size()?;
+    let page_w = page_size.Width as f64;
+    let page_h = page_size.Height as f64;
+    let is_landscape = page_w > page_h;
+
+    let target_width = 4736u32;
+    let target_height = 6778u32;
+
     let options = PdfPageRenderOptions::new()?;
-    // Canonical width for Canon LBP-1120 A4 @ 600 DPI
-    options.SetDestinationWidth(4736)?;
+    if is_landscape {
+        let sw = (target_width as f64) / page_h;
+        let sh = (target_height as f64) / page_w;
+        let s = sw.min(sh);
+        let dest_w = ((page_w * s).round() as u32).min(target_height);
+        let dest_h = ((page_h * s).round() as u32).min(target_width);
+        options.SetDestinationWidth(dest_w)?;
+        options.SetDestinationHeight(dest_h)?;
+    } else {
+        let sw = (target_width as f64) / page_w;
+        let sh = (target_height as f64) / page_h;
+        let s = sw.min(sh);
+        let dest_w = ((page_w * s).round() as u32).min(target_width);
+        let dest_h = ((page_h * s).round() as u32).min(target_height);
+        options.SetDestinationWidth(dest_w)?;
+        options.SetDestinationHeight(dest_h)?;
+    }
 
     let stream = InMemoryRandomAccessStream::new()?;
     page.RenderWithOptionsToStreamAsync(&stream, &options)?
@@ -93,15 +116,44 @@ pub fn render_pdf_page_with_mode(
     let width = decoder.PixelWidth()? as usize;
     let height = decoder.PixelHeight()? as usize;
 
+    let (active_pixels, final_w, final_h) = if is_landscape {
+        let final_w = height;
+        let final_h = width;
+        let mut rotated = vec![0u8; final_w * final_h * 4];
+        for y_tile in (0..height).step_by(64) {
+            let y_max = (y_tile + 64).min(height);
+            for x_tile in (0..width).step_by(64) {
+                let x_max = (x_tile + 64).min(width);
+                for y in y_tile..y_max {
+                    let src_row = y * width * 4;
+                    let dst_x = y;
+                    for x in x_tile..x_max {
+                        let src_idx = src_row + x * 4;
+                        let dst_y = width - 1 - x;
+                        let dst_idx = (dst_y * final_w + dst_x) * 4;
+                        rotated[dst_idx..dst_idx + 4]
+                            .copy_from_slice(&raw_pixels[src_idx..src_idx + 4]);
+                    }
+                }
+            }
+        }
+        (std::borrow::Cow::Owned(rotated), final_w, final_h)
+    } else {
+        (std::borrow::Cow::Borrowed(&raw_pixels[..]), width, height)
+    };
+
     let t_pixel = std::time::Instant::now();
     // Convert RGBA pixels (4 bytes per pixel) to 1-bpp monochrome packed bitmap
-    let target_width = 4736;
-    let target_height = 6778;
+    let target_width = 4736usize;
+    let target_height = 6778usize;
 
     let mut pbm = PbmImage::new(target_width, target_height);
 
-    let actual_h = height.min(target_height);
-    let actual_w = width.min(target_width);
+    let actual_h = final_h.min(target_height);
+    let actual_w = final_w.min(target_width);
+
+    let x_offset = (target_width.saturating_sub(actual_w)) / 2;
+    let y_offset = (target_height.saturating_sub(actual_h)) / 2;
 
     let mut min_x = usize::MAX;
     let mut max_x = 0;
@@ -113,18 +165,19 @@ pub fn render_pdf_page_with_mode(
     let mut err_next = vec![0i16; actual_w + 2];
 
     for y in 0..actual_h {
-        let pbm_line = pbm.line_mut(y);
-        let row_start = y * width * 4;
+        let dest_y = y + y_offset;
+        let pbm_line = pbm.line_mut(dest_y);
+        let row_start = y * final_w * 4;
 
         if y % 2 == 0 {
             // Left to Right scan
             for x in 0..actual_w {
                 let x_err = x + 1;
                 let px_idx = row_start + x * 4;
-                let r = raw_pixels[px_idx] as u32;
-                let g = raw_pixels[px_idx + 1] as u32;
-                let b = raw_pixels[px_idx + 2] as u32;
-                let a = raw_pixels[px_idx + 3] as u32;
+                let r = active_pixels[px_idx] as u32;
+                let g = active_pixels[px_idx + 1] as u32;
+                let b = active_pixels[px_idx + 2] as u32;
+                let a = active_pixels[px_idx + 3] as u32;
 
                 let gray = if a == 255 {
                     (r * 299 + g * 587 + b * 114) / 1000
@@ -175,19 +228,20 @@ pub fn render_pdf_page_with_mode(
                 };
 
                 if is_black {
-                    pbm_line[x / 8] |= 1 << (7 - (x % 8));
+                    let dest_x = x + x_offset;
+                    pbm_line[dest_x / 8] |= 1 << (7 - (dest_x % 8));
                     black_pixels += 1;
-                    if x < min_x {
-                        min_x = x;
+                    if dest_x < min_x {
+                        min_x = dest_x;
                     }
-                    if x > max_x {
-                        max_x = x;
+                    if dest_x > max_x {
+                        max_x = dest_x;
                     }
-                    if y < min_y {
-                        min_y = y;
+                    if dest_y < min_y {
+                        min_y = dest_y;
                     }
-                    if y > max_y {
-                        max_y = y;
+                    if dest_y > max_y {
+                        max_y = dest_y;
                     }
                 }
 
@@ -202,10 +256,10 @@ pub fn render_pdf_page_with_mode(
             for x in (0..actual_w).rev() {
                 let x_err = x + 1;
                 let px_idx = row_start + x * 4;
-                let r = raw_pixels[px_idx] as u32;
-                let g = raw_pixels[px_idx + 1] as u32;
-                let b = raw_pixels[px_idx + 2] as u32;
-                let a = raw_pixels[px_idx + 3] as u32;
+                let r = active_pixels[px_idx] as u32;
+                let g = active_pixels[px_idx + 1] as u32;
+                let b = active_pixels[px_idx + 2] as u32;
+                let a = active_pixels[px_idx + 3] as u32;
 
                 let gray = if a == 255 {
                     (r * 299 + g * 587 + b * 114) / 1000
@@ -252,19 +306,20 @@ pub fn render_pdf_page_with_mode(
                 };
 
                 if is_black {
-                    pbm_line[x / 8] |= 1 << (7 - (x % 8));
+                    let dest_x = x + x_offset;
+                    pbm_line[dest_x / 8] |= 1 << (7 - (dest_x % 8));
                     black_pixels += 1;
-                    if x < min_x {
-                        min_x = x;
+                    if dest_x < min_x {
+                        min_x = dest_x;
                     }
-                    if x > max_x {
-                        max_x = x;
+                    if dest_x > max_x {
+                        max_x = dest_x;
                     }
-                    if y < min_y {
-                        min_y = y;
+                    if dest_y < min_y {
+                        min_y = dest_y;
                     }
-                    if y > max_y {
-                        max_y = y;
+                    if dest_y > max_y {
+                        max_y = dest_y;
                     }
                 }
 
@@ -331,4 +386,270 @@ pub fn render_pdf_file_to_pbm(
 pub fn get_pdf_page_count(pdf_path: &str) -> Result<u32, Box<dyn Error>> {
     let doc = load_pdf_document(pdf_path)?;
     Ok(doc.PageCount()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+
+    pub fn create_synthetic_pdf(
+        path: &std::path::Path,
+        pages: &[(f64, f64, &str)], // (width, height, content_ops)
+        leading_bytes: &[u8],
+    ) -> std::io::Result<()> {
+        let mut f = File::create(path)?;
+        f.write_all(leading_bytes)?;
+
+        let mut offsets = Vec::new();
+        let mut cur_offset = leading_bytes.len();
+
+        let header = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+        f.write_all(header)?;
+        cur_offset += header.len();
+
+        // Object 1: Catalog
+        offsets.push(cur_offset);
+        let obj1 = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+        f.write_all(obj1)?;
+        cur_offset += obj1.len();
+
+        // Object 2: Pages
+        let mut kids = String::new();
+        for i in 0..pages.len() {
+            kids.push_str(&format!("{} 0 R ", 3 + i * 3));
+        }
+        let obj2 = format!(
+            "2 0 obj\n<< /Type /Pages /Kids [{}] /Count {} >>\nendobj\n",
+            kids.trim(),
+            pages.len()
+        );
+        offsets.push(cur_offset);
+        f.write_all(obj2.as_bytes())?;
+        cur_offset += obj2.len();
+
+        for (i, (w, h, stream_ops)) in pages.iter().enumerate() {
+            let page_obj_id = 3 + i * 3;
+            let contents_obj_id = 4 + i * 3;
+            let font_obj_id = 5 + i * 3;
+
+            // Page obj
+            offsets.push(cur_offset);
+            let page_obj = format!(
+                "{} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {:.2} {:.2}] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>\nendobj\n",
+                page_obj_id, w, h, contents_obj_id, font_obj_id
+            );
+            f.write_all(page_obj.as_bytes())?;
+            cur_offset += page_obj.len();
+
+            // Contents obj
+            offsets.push(cur_offset);
+            let contents_obj = format!(
+                "{} 0 obj\n<< /Length {} >>\nstream\n{}\nendstream\nendobj\n",
+                contents_obj_id,
+                stream_ops.len(),
+                stream_ops
+            );
+            f.write_all(contents_obj.as_bytes())?;
+            cur_offset += contents_obj.len();
+
+            // Font obj
+            offsets.push(cur_offset);
+            let font_obj = format!(
+                "{} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+                font_obj_id
+            );
+            f.write_all(font_obj.as_bytes())?;
+            cur_offset += font_obj.len();
+        }
+
+        // XRef table
+        let xref_offset = cur_offset;
+        let total_objs = 1 + offsets.len();
+        let mut xref = format!("xref\n0 {}\n0000000000 65535 f \r\n", total_objs);
+        for off in &offsets {
+            xref.push_str(&format!("{:010} 00000 n \r\n", off));
+        }
+        xref.push_str(&format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            total_objs, xref_offset
+        ));
+        f.write_all(xref.as_bytes())?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_render_a4_portrait_text() {
+        let temp = std::env::temp_dir().join("test_a4_portrait.pdf");
+        let stream =
+            "BT /F1 28 Tf 100 700 Td (Canon LBP-1120 Portrait Text) Tj ET 100 500 200 80 re f";
+        create_synthetic_pdf(&temp, &[(595.28, 841.89, stream)], b"").expect("write pdf");
+
+        let doc = load_pdf_document(&temp.to_string_lossy()).expect("load pdf");
+        assert_eq!(doc.PageCount().unwrap(), 1);
+
+        let (pbm, _) = render_pdf_page_with_mode(&doc, 0, HalftoneMode::Normal).expect("render");
+        assert_eq!(pbm.width, 4736);
+        assert_eq!(pbm.height, 6778);
+
+        // Verify black pixels exist (text and rectangle rendered)
+        let total_black: usize = pbm.data.iter().map(|b| b.count_ones() as usize).sum();
+        assert!(
+            total_black > 1000,
+            "Expected text and rectangle pixels, found {}",
+            total_black
+        );
+
+        let _ = std::fs::remove_file(temp);
+    }
+
+    #[test]
+    fn test_render_a4_landscape_auto_rotation() {
+        let temp = std::env::temp_dir().join("test_a4_landscape.pdf");
+        let stream =
+            "BT /F1 32 Tf 100 450 Td (Landscape Mode Auto-Rotated) Tj ET 100 200 300 60 re f";
+        create_synthetic_pdf(&temp, &[(841.89, 595.28, stream)], b"").expect("write pdf");
+
+        let doc = load_pdf_document(&temp.to_string_lossy()).expect("load pdf");
+        assert_eq!(doc.PageCount().unwrap(), 1);
+
+        let (pbm, _) = render_pdf_page_with_mode(&doc, 0, HalftoneMode::Normal).expect("render");
+        assert_eq!(pbm.width, 4736);
+        assert_eq!(pbm.height, 6778);
+
+        let total_black: usize = pbm.data.iter().map(|b| b.count_ones() as usize).sum();
+        assert!(
+            total_black > 1000,
+            "Expected landscape pixels rendered, found {}",
+            total_black
+        );
+
+        let _ = std::fs::remove_file(temp);
+    }
+
+    #[test]
+    fn test_render_us_legal_portrait_proportional_fit() {
+        let temp = std::env::temp_dir().join("test_us_legal.pdf");
+        // Place shapes near bottom (y=50) and top (y=950) of Legal page (height=1008)
+        let stream = "50 50 150 40 re f 50 950 150 40 re f";
+        create_synthetic_pdf(&temp, &[(612.0, 1008.0, stream)], b"").expect("write pdf");
+
+        let doc = load_pdf_document(&temp.to_string_lossy()).expect("load pdf");
+        let (pbm, _) = render_pdf_page_with_mode(&doc, 0, HalftoneMode::Normal).expect("render");
+        assert_eq!(pbm.width, 4736);
+        assert_eq!(pbm.height, 6778);
+
+        // Find bounding box to prove both top and bottom shapes are preserved without clipping
+        let mut min_y = usize::MAX;
+        let mut max_y = 0;
+        for y in 0..pbm.height {
+            let line = pbm.line(y);
+            if line.iter().any(|&b| b != 0) {
+                if y < min_y {
+                    min_y = y;
+                }
+                if y > max_y {
+                    max_y = y;
+                }
+            }
+        }
+        assert!(min_y < 1000, "Top marker missing, min_y: {}", min_y);
+        assert!(max_y > 5500, "Bottom marker clipped, max_y: {}", max_y);
+
+        let _ = std::fs::remove_file(temp);
+    }
+
+    #[test]
+    fn test_render_multi_page_pdf() {
+        let temp = std::env::temp_dir().join("test_multi_page.pdf");
+        let p1 = "BT /F1 24 Tf 100 700 Td (Page 1 Content) Tj ET";
+        let p2 = "BT /F1 24 Tf 100 700 Td (Page 2 Unique Content) Tj ET 100 400 100 100 re f";
+        let p3 = "BT /F1 24 Tf 100 700 Td (Page 3 Distinct Content) Tj ET 100 300 200 50 re f";
+        create_synthetic_pdf(
+            &temp,
+            &[
+                (595.28, 841.89, p1),
+                (595.28, 841.89, p2),
+                (595.28, 841.89, p3),
+            ],
+            b"",
+        )
+        .expect("write multi-page pdf");
+
+        let count = get_pdf_page_count(&temp.to_string_lossy()).expect("get page count");
+        assert_eq!(count, 3);
+
+        let doc = load_pdf_document(&temp.to_string_lossy()).expect("load");
+        let (pbm1, _) =
+            render_pdf_page_with_mode(&doc, 0, HalftoneMode::Normal).expect("render p1");
+        let (pbm2, _) =
+            render_pdf_page_with_mode(&doc, 1, HalftoneMode::Normal).expect("render p2");
+        let (pbm3, _) =
+            render_pdf_page_with_mode(&doc, 2, HalftoneMode::Normal).expect("render p3");
+
+        assert_eq!(pbm1.width, 4736);
+        assert_eq!(pbm2.width, 4736);
+        assert_eq!(pbm3.width, 4736);
+
+        // Verify each page rendered distinct data
+        let b1: usize = pbm1.data.iter().map(|b| b.count_ones() as usize).sum();
+        let b2: usize = pbm2.data.iter().map(|b| b.count_ones() as usize).sum();
+        let b3: usize = pbm3.data.iter().map(|b| b.count_ones() as usize).sum();
+        assert!(b1 > 0 && b2 > 0 && b3 > 0);
+        assert_ne!(
+            b1, b2,
+            "Page 1 and Page 2 should have different pixel counts"
+        );
+        assert_ne!(
+            b2, b3,
+            "Page 2 and Page 3 should have different pixel counts"
+        );
+
+        let _ = std::fs::remove_file(temp);
+    }
+
+    #[test]
+    fn test_render_corrupt_truncated_pdf() {
+        let temp = std::env::temp_dir().join("test_corrupt.pdf");
+        {
+            let mut f = File::create(&temp).expect("create");
+            // Write partial header and truncated body
+            f.write_all(b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\n")
+                .expect("write");
+        }
+
+        // Must produce clear error, not panic
+        let res = load_pdf_document(&temp.to_string_lossy());
+        assert!(res.is_err(), "Corrupt PDF should produce an error");
+
+        let _ = std::fs::remove_file(temp);
+    }
+
+    #[test]
+    fn test_render_halftone_mode_comparison() {
+        let temp = std::env::temp_dir().join("test_halftone_modes.pdf");
+        // Draw gray boxes (gray 0.5 and gray 0.2)
+        let stream = "0.5 g 100 500 200 100 re f 0.2 g 100 300 200 100 re f";
+        create_synthetic_pdf(&temp, &[(595.28, 841.89, stream)], b"").expect("write pdf");
+
+        let doc = load_pdf_document(&temp.to_string_lossy()).expect("load");
+        let (pbm_norm, _) =
+            render_pdf_page_with_mode(&doc, 0, HalftoneMode::Normal).expect("render normal");
+        let (pbm_photo, _) =
+            render_pdf_page_with_mode(&doc, 0, HalftoneMode::Photo).expect("render photo");
+
+        assert_eq!(pbm_norm.width, 4736);
+        assert_eq!(pbm_photo.width, 4736);
+
+        let black_norm: usize = pbm_norm.data.iter().map(|b| b.count_ones() as usize).sum();
+        let black_photo: usize = pbm_photo.data.iter().map(|b| b.count_ones() as usize).sum();
+
+        assert!(black_norm > 0);
+        assert!(black_photo > 0);
+        // Normal mode snaps solid black/white thresholds whereas Photo diffuses continuous tones
+        assert_ne!(black_norm, black_photo);
+
+        let _ = std::fs::remove_file(temp);
+    }
 }

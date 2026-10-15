@@ -463,41 +463,34 @@ impl UsbPrinter {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
-                    "Unexpected opcode 0x{:04X} in extended status reply",
+                    "Unexpected opcode 0x{:04X} in extended status reply (expected 0xA0A0)",
                     opcode
                 ),
             ));
         }
 
-        let basic = header[4];
-        let aux = payload.first().copied().unwrap_or(0);
-        let controller = payload.get(1).copied().unwrap_or(0);
-        let paper_available_bits = payload.get(2).copied().unwrap_or(0);
-        let engine_raw = if payload.len() >= 6 {
-            u16::from_le_bytes([payload[4], payload[5]])
-        } else {
-            0
-        };
+        if payload.len() < 12 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!(
+                    "Incomplete extended status payload: received {} bytes, expected at least 12",
+                    payload.len()
+                ),
+            ));
+        }
 
-        let start_pages = if payload.len() >= 8 {
-            u16::from_le_bytes([payload[6], payload[7]])
-        } else {
-            0
-        };
-        let printing_pages = if payload.len() >= 10 {
-            u16::from_le_bytes([payload[8], payload[9]])
-        } else {
-            0
-        };
-        let shipped_pages = if payload.len() >= 12 {
-            u16::from_le_bytes([payload[10], payload[11]])
-        } else {
-            0
-        };
+        let basic = header[4];
+        let aux = payload[0];
+        let controller = payload[1];
+        let paper_available_bits = payload[2];
+        let engine_raw = u16::from_le_bytes([payload[4], payload[5]]);
+        let start_pages = u16::from_le_bytes([payload[6], payload[7]]);
+        let printing_pages = u16::from_le_bytes([payload[8], payload[9]]);
+        let shipped_pages = u16::from_le_bytes([payload[10], payload[11]]);
         let printed_pages = if payload.len() >= 14 {
             u16::from_le_bytes([payload[12], payload[13]])
         } else {
-            0
+            shipped_pages
         };
 
         Ok(ExtendedStatusReport {
@@ -532,11 +525,19 @@ impl UsbPrinter {
         self.read_pipe_exact(0x82, &mut header)?;
 
         let total_size = u16::from_le_bytes([header[2], header[3]]);
-        let payload_len = (total_size as usize).saturating_sub(6);
-        let mut payload = vec![0u8; payload_len];
-        if !payload.is_empty() {
-            self.read_pipe_exact(0x82, &mut payload)?;
+        if !(18..=64).contains(&total_size) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Invalid extended status packet size: {} bytes (expected 18..=64)",
+                    total_size
+                ),
+            ));
         }
+
+        let payload_len = (total_size as usize) - 6;
+        let mut payload = vec![0u8; payload_len];
+        self.read_pipe_exact(0x82, &mut payload)?;
 
         Self::parse_extended_status(&header, &payload)
     }
@@ -547,6 +548,16 @@ impl UsbPrinter {
         self.write_pipe(0x01, &cmd)?;
         let mut buf = [0u8; 6];
         self.read_pipe_exact(0x82, &mut buf)?;
+        let opcode = u16::from_le_bytes([buf[0], buf[1]]);
+        if opcode != 0xE0A0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Unexpected opcode 0x{:04X} in basic status reply (expected 0xE0A0)",
+                    opcode
+                ),
+            ));
+        }
         Ok(buf)
     }
 
@@ -717,7 +728,194 @@ mod tests {
     #[test]
     fn test_extended_status_invalid_opcode() {
         let bad_header = [0x12, 0x34, 0x06, 0x00, 0x00, 0x00];
-        let payload = [];
+        let payload = [0u8; 12];
         assert!(UsbPrinter::parse_extended_status(&bad_header, &payload).is_err());
+    }
+
+    #[test]
+    fn test_extended_status_truncated_payload_rejected() {
+        let header = [0xA0, 0xA0, 0x0C, 0x00, 0x40, 0x00];
+        // Only 6 bytes payload (need at least 12)
+        let short_payload = [0x00, 0x00, 0x80, 0x00, 0x00, 0x00];
+        let res = UsbPrinter::parse_extended_status(&header, &short_payload);
+        assert!(res.is_err(), "Truncated payload should be rejected");
+        if let Err(e) = res {
+            assert_eq!(e.kind(), io::ErrorKind::UnexpectedEof);
+        }
+    }
+
+    #[test]
+    fn test_lifecycle_counter_wraparound_logic() {
+        // Test wraparound from 65535 to small counter
+        let baseline: u16 = 65535;
+        let delivered: u16 = 2;
+        let delta = delivered.wrapping_sub(baseline);
+        assert_eq!(delta, 3);
+        assert!(
+            delta > 0 && delta < 0x8000,
+            "Wraparound counter should be detected as delivered"
+        );
+
+        // Stale counter (same value)
+        let stale: u16 = 65535;
+        let delta_stale = stale.wrapping_sub(baseline);
+        assert_eq!(delta_stale, 0);
+        assert!(
+            !(delta_stale > 0 && delta_stale < 0x8000),
+            "Stale counter must not trigger delivery"
+        );
+
+        // Delayed or decremented counter (e.g. 65534)
+        let decremented: u16 = 65534;
+        let delta_dec = decremented.wrapping_sub(baseline);
+        assert_eq!(delta_dec, 65535);
+        assert!(
+            !(delta_dec > 0 && delta_dec < 0x8000),
+            "Decremented counter must not trigger delivery"
+        );
+    }
+
+    #[test]
+    fn test_lifecycle_readiness_state_evaluation() {
+        let header = [0xA0, 0xA0, 0x14, 0x00, 0x40, 0x00]; // Basic 0x40 = UnitFree, Online
+
+        // 1. Ready state
+        let ready_payload = [
+            0x00, 0x00, 0x80, 0x00, 0x00, 0x00, // engine_raw = 0x0000, aux=0x00
+            0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+        ];
+        let rep = UsbPrinter::parse_extended_status(&header, &ready_payload).unwrap();
+        assert!(rep.unit_free);
+        assert!(!rep.waiting);
+        assert_eq!(rep.aux & 0x04, 0); // feed motor idle
+
+        // 2. Warming up / waiting state (engine_raw 0x1000)
+        let warmup_payload = [
+            0x00, 0x00, 0x80, 0x00, 0x00, 0x10, // engine_raw = 0x1000 (waiting)
+            0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+        ];
+        let rep_warm = UsbPrinter::parse_extended_status(&header, &warmup_payload).unwrap();
+        assert!(rep_warm.waiting);
+
+        // 3. Paper jam state (engine_raw 0x0100)
+        let jam_payload = [
+            0x00, 0x00, 0x80, 0x00, 0x00, 0x01, // engine_raw = 0x0100 (jam)
+            0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+        ];
+        let rep_jam = UsbPrinter::parse_extended_status(&header, &jam_payload).unwrap();
+        assert!(rep_jam.paper_jam);
+
+        // 4. Feed motor active (aux 0x04)
+        let feed_payload = [
+            0x04, 0x00, 0x80, 0x00, 0x00, 0x00, // aux = 0x04 (feeding)
+            0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00,
+        ];
+        let rep_feed = UsbPrinter::parse_extended_status(&header, &feed_payload).unwrap();
+        assert_eq!(rep_feed.aux & 0x04, 0x04);
+    }
+
+    // Mock USB transport simulation
+    struct MockPipe {
+        max_chunk: usize,
+        written: Vec<u8>,
+        pending_read: Vec<u8>,
+        simulate_zero_progress: bool,
+    }
+
+    impl MockPipe {
+        fn new(max_chunk: usize) -> Self {
+            Self {
+                max_chunk,
+                written: Vec::new(),
+                pending_read: Vec::new(),
+                simulate_zero_progress: false,
+            }
+        }
+
+        fn mock_write(&mut self, data: &[u8]) -> io::Result<usize> {
+            if self.simulate_zero_progress {
+                return Ok(0);
+            }
+            let n = data.len().min(self.max_chunk);
+            self.written.extend_from_slice(&data[..n]);
+            Ok(n)
+        }
+
+        fn mock_write_all(&mut self, data: &[u8]) -> io::Result<usize> {
+            let mut total_written = 0;
+            while total_written < data.len() {
+                let n = self.mock_write(&data[total_written..])?;
+                if n == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::WriteZero,
+                        "Zero bytes written",
+                    ));
+                }
+                total_written += n;
+            }
+            Ok(total_written)
+        }
+
+        fn mock_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.pending_read.is_empty() {
+                return Ok(0);
+            }
+            let n = buf.len().min(self.pending_read.len()).min(self.max_chunk);
+            buf[..n].copy_from_slice(&self.pending_read[..n]);
+            self.pending_read.drain(..n);
+            Ok(n)
+        }
+
+        fn mock_read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+            let mut total_read = 0;
+            while total_read < buf.len() {
+                let n = self.mock_read(&mut buf[total_read..])?;
+                if n == 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Unexpected EOF",
+                    ));
+                }
+                total_read += n;
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_mock_transport_partial_writes() {
+        let mut pipe = MockPipe::new(17); // 17-byte chunks
+        let data: Vec<u8> = (0..250).map(|i| (i % 256) as u8).collect();
+        let written = pipe.mock_write_all(&data).expect("write all");
+        assert_eq!(written, 250);
+        assert_eq!(pipe.written, data);
+    }
+
+    #[test]
+    fn test_mock_transport_partial_reads() {
+        let mut pipe = MockPipe::new(3); // 3-byte fragments
+        pipe.pending_read = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
+        let mut buf = [0u8; 6];
+        pipe.mock_read_exact(&mut buf).expect("read exact");
+        assert_eq!(buf, [0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE]);
+    }
+
+    #[test]
+    fn test_mock_transport_write_zero_error() {
+        let mut pipe = MockPipe::new(16);
+        pipe.simulate_zero_progress = true;
+        let res = pipe.mock_write_all(&[1, 2, 3, 4]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind(), io::ErrorKind::WriteZero);
+    }
+
+    #[test]
+    fn test_mock_transport_unexpected_eof() {
+        let mut pipe = MockPipe::new(16);
+        pipe.pending_read = vec![1, 2]; // only 2 bytes available
+        let mut buf = [0u8; 6];
+        let res = pipe.mock_read_exact(&mut buf);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
     }
 }

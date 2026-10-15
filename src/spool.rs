@@ -33,6 +33,13 @@ pub struct SpoolJob {
     pub mode: HalftoneMode,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageDeliveryStatus {
+    HardwareConfirmed { baseline: u16, current: u16 },
+    UnconfirmedMechanicalCompletion { baseline: u16, current: u16 },
+}
+
 pub fn run_print_job(
     pdf_path: &str,
     spool_ingest_ms: Option<u128>,
@@ -207,23 +214,43 @@ pub fn run_print_job(
                 page_idx + 1
             );
             let mut engine_ready = false;
-            for _ in 0..100 {
-                // up to 10s
-                if let Ok(st) = printer.query_extended_status()
-                    && st.unit_free
-                    && !st.waiting
-                    && (st.aux & 0x04) == 0
-                {
-                    engine_ready = true;
-                    break;
+            for _ in 0..300 {
+                // up to 30s
+                if let Ok(st) = printer.query_extended_status() {
+                    if st.paper_jam {
+                        let _ = printer.go_offline();
+                        let _ = printer.release_unit();
+                        return Err(format!(
+                            "Hardware Error: Paper jam detected before page {}!",
+                            page_idx + 1
+                        )
+                        .into());
+                    }
+                    if st.service_call {
+                        let _ = printer.go_offline();
+                        let _ = printer.release_unit();
+                        return Err(format!(
+                            "Hardware Error: Service call error 0x{:04X} before page {}!",
+                            st.engine_raw,
+                            page_idx + 1
+                        )
+                        .into());
+                    }
+                    if st.unit_free && !st.waiting && (st.aux & 0x04) == 0 {
+                        engine_ready = true;
+                        break;
+                    }
                 }
                 sleep(Duration::from_millis(100));
             }
             if !engine_ready {
-                println!(
-                    "Warning: Engine still busy/waiting before page {}; proceeding with caution.",
+                let _ = printer.go_offline();
+                let _ = printer.release_unit();
+                return Err(format!(
+                    "Engine readiness timeout: Engine remained busy or warming up for over 30s before page {}",
                     page_idx + 1
-                );
+                )
+                .into());
             } else {
                 println!("READY");
             }
@@ -286,7 +313,13 @@ pub fn run_print_job(
         // Query fresh baseline shipped pages immediately before beginning this page
         let baseline_shipped = match printer.query_extended_status() {
             Ok(st) => st.shipped_pages,
-            Err(_) => 0,
+            Err(_) => {
+                sleep(Duration::from_millis(100));
+                printer
+                    .query_extended_status()
+                    .map(|s| s.shipped_pages)
+                    .unwrap_or(0)
+            }
         };
 
         // Stage 2: Rasterization
@@ -513,11 +546,20 @@ pub fn run_print_job(
                     )
                     .into());
                 }
-                if st.shipped_pages > baseline_shipped
-                    || (feed_seen && !feeding && !busy && iter >= 24)
-                {
+                let delta = st.shipped_pages.wrapping_sub(baseline_shipped);
+                if delta > 0 && delta < 0x8000 {
                     println!(
-                        "  [Physical Delivery Confirmed] Page {}/{} successfully delivered to output tray (Shipped: {} -> {}).",
+                        "  [Physical Delivery Confirmed] Page {}/{} successfully delivered to output tray (Hardware counter: {} -> {}).",
+                        page_idx + 1,
+                        page_count,
+                        baseline_shipped,
+                        st.shipped_pages
+                    );
+                    page_delivered = true;
+                    break;
+                } else if feed_seen && !feeding && !busy && iter >= 24 {
+                    println!(
+                        "  [Unconfirmed Mechanical Completion] Page {}/{} mechanical cycle completed (feed motor idle, engine not busy), but hardware counter did not advance (baseline: {}, current: {}). Delivery unconfirmed by hardware counter.",
                         page_idx + 1,
                         page_count,
                         baseline_shipped,
@@ -748,6 +790,7 @@ fn listen_on_pipe(
 
             if total_bytes < 32 {
                 let _ = std::fs::remove_file(&job_path);
+                clear_stuck_windows_jobs();
                 continue;
             }
 
@@ -761,13 +804,14 @@ fn listen_on_pipe(
                         0
                     };
                     eprintln!(
-                        "[Spool Monitor] Rejected non-PDF stream on '{}' ({} bytes, magic: {:02X?}).",
+                        "[Spool Monitor] Rejected non-PDF stream on '{}' ({} bytes, magic: {:02X?}). Required format is PDF from 'Microsoft Print to PDF' driver.",
                         pipe_name,
                         total_bytes,
                         &preview[..preview_len]
                     );
                 }
                 let _ = std::fs::remove_file(&job_path);
+                clear_stuck_windows_jobs();
                 continue;
             }
 
@@ -786,6 +830,17 @@ fn listen_on_pipe(
 }
 
 pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
+    // Purge any leftover lbp1120_job_*.pdf files in %TEMP% from previous unclean shutdowns
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("lbp1120_job_") && name_str.ends_with(".pdf") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+
     // Enforce single-instance execution via a named Win32 Mutex
     let mutex_name = w!(r"Local\CanonLBP1120_SpoolServer_Mutex");
     let _h_mutex = match unsafe { CreateMutexW(None, true, mutex_name) } {

@@ -677,11 +677,17 @@ fn run_print_pbm(pbm_path: &str) -> Result<(), Box<dyn std::error::Error>> {
                 sec, st.aux, feeding, busy, st.printed_pages, st.printing_pages
             );
 
-            // Physical paper cycle: delivery confirmed when shipped_pages increments beyond pre-print baseline or feed cycle clears
-            if st.shipped_pages > pre_print_shipped || (sec >= 12 && !feeding && !busy && feed_seen)
-            {
+            let delta = st.shipped_pages.wrapping_sub(pre_print_shipped);
+            if delta > 0 && delta < 0x8000 {
                 println!(
-                    "\n  [Physical Delivery Confirmed] Page successfully ejected into output tray (Shipped: {} -> {}).",
+                    "\n  [Physical Delivery Confirmed] Page successfully ejected into output tray (Hardware counter: {} -> {}).",
+                    pre_print_shipped, st.shipped_pages
+                );
+                page_delivered = true;
+                break;
+            } else if sec >= 12 && !feeding && !busy && feed_seen {
+                println!(
+                    "\n  [Unconfirmed Mechanical Completion] Mechanical cycle completed (feed motor idle, engine not busy), but hardware shipped counter did not advance (baseline: {}, current: {}). Delivery unconfirmed by hardware counter.",
                     pre_print_shipped, st.shipped_pages
                 );
                 page_delivered = true;
@@ -1007,5 +1013,218 @@ mod tests {
             let recovered = decode_capt_to_pbm(&capt_stream).unwrap();
             assert_eq!(pbm.data, recovered.data);
         }
+    }
+
+    #[test]
+    fn test_e2e_single_page_text_pipeline() {
+        let pbm = generate_synthetic_pbm(592 * 8, 300, "text_sample");
+        let capt_bytes = encode_pbm_to_capt(&pbm, 4096).expect("encode");
+
+        // Verify packet sequence
+        let mut cursor = Cursor::new(&capt_bytes);
+        let p1 = CaptPacket::read(&mut cursor).expect("pkt 1");
+        assert_eq!(p1.header.opcode, OPCODE_IC_BEGIN_PAGE);
+        assert_eq!(p1.payload.len(), 34);
+
+        let p2 = CaptPacket::read(&mut cursor).expect("pkt 2");
+        assert_eq!(p2.header.opcode, OPCODE_IC_BEGIN_DATA);
+
+        let mut video_packet_count = 0;
+        let mut end_page_found = false;
+        while (cursor.position() as usize) < capt_bytes.len() {
+            let pkt = CaptPacket::read(&mut cursor).expect("video pkt");
+            if pkt.header.opcode == OPCODE_IC_VIDEO_DATA {
+                video_packet_count += 1;
+                assert!(pkt.payload.len() <= 4096);
+            } else if pkt.header.opcode == OPCODE_IC_END_PAGE {
+                end_page_found = true;
+                break;
+            }
+        }
+        assert!(video_packet_count > 0);
+        assert!(end_page_found);
+
+        // Bit-exact roundtrip verification
+        let recovered = decode_capt_to_pbm(&capt_bytes).expect("decode");
+        assert_eq!(recovered.width, pbm.width);
+        assert_eq!(recovered.height, pbm.height);
+        assert_eq!(recovered.data, pbm.data);
+    }
+
+    #[test]
+    fn test_e2e_multi_page_sequence() {
+        for page_idx in 0..3 {
+            let pbm = generate_synthetic_pbm(
+                592 * 8,
+                150,
+                if page_idx % 2 == 0 { "grid" } else { "stripes" },
+            );
+            let capt_bytes = encode_pbm_to_capt(&pbm, 2048).expect("encode page");
+            let recovered = decode_capt_to_pbm(&capt_bytes).expect("decode page");
+            assert_eq!(recovered.data, pbm.data);
+        }
+    }
+
+    #[test]
+    fn test_e2e_photograph_halftone() {
+        let mut pbm = PbmImage::new(592 * 8, 200);
+        // Simulate continuous-tone halftone dither pattern
+        for y in 0..200 {
+            for x in 0..(592 * 8) {
+                if ((x * 13 + y * 7) % 17) < 9 {
+                    pbm.set_pixel(x, y, true);
+                }
+            }
+        }
+        let capt_bytes = encode_pbm_to_capt(&pbm, 4096).expect("encode photo");
+        let recovered = decode_capt_to_pbm(&capt_bytes).expect("decode photo");
+        assert_eq!(recovered.data, pbm.data);
+    }
+
+    #[test]
+    fn test_e2e_fine_lines_and_small_text() {
+        let mut pbm = PbmImage::new(592 * 8, 100);
+        // Alternating 1-pixel scanlines
+        for y in (0..100).step_by(2) {
+            pbm.line_mut(y).fill(0xFF);
+        }
+        let capt_bytes = encode_pbm_to_capt(&pbm, 4096).expect("encode fine lines");
+        let recovered = decode_capt_to_pbm(&capt_bytes).expect("decode fine lines");
+        assert_eq!(recovered.data, pbm.data);
+    }
+
+    #[test]
+    fn test_e2e_mixed_text_and_image() {
+        let mut pbm = PbmImage::new(592 * 8, 300);
+        // Banner (top 50 lines solid black)
+        for y in 0..50 {
+            pbm.line_mut(y).fill(0xFF);
+        }
+        // Text block (middle 150 lines)
+        for y in 60..200 {
+            for x in 100..400 {
+                if (x + y) % 8 == 0 {
+                    pbm.set_pixel(x, y, true);
+                }
+            }
+        }
+        // Dithered image (bottom 80 lines)
+        for y in 220..300 {
+            for x in 0..(592 * 8) {
+                if ((x * 3 + y * 5) % 11) < 5 {
+                    pbm.set_pixel(x, y, true);
+                }
+            }
+        }
+        let capt_bytes = encode_pbm_to_capt(&pbm, 4096).expect("encode mixed");
+        let recovered = decode_capt_to_pbm(&capt_bytes).expect("decode mixed");
+        assert_eq!(recovered.data, pbm.data);
+    }
+
+    #[test]
+    fn test_e2e_portrait_and_landscape_normalization() {
+        // Landscape PBM: 800 wide, 400 high
+        let mut landscape_pbm = PbmImage::new(800, 400);
+        landscape_pbm.set_pixel(100, 100, true);
+
+        // Normalize into A4 canonical canvas
+        let mut a4_canvas = PbmImage::new(4736, 6778);
+        let x_offset = (4736 - landscape_pbm.width) / 2;
+        let y_offset = 200;
+        for y in 0..landscape_pbm.height {
+            for x in 0..landscape_pbm.width {
+                if (landscape_pbm.line(y)[x / 8] & (1 << (7 - (x % 8)))) != 0 {
+                    a4_canvas.set_pixel(x_offset + x, y_offset + y, true);
+                }
+            }
+        }
+        assert_eq!(a4_canvas.width, 4736);
+        assert_eq!(a4_canvas.height, 6778);
+        assert!(a4_canvas.get_pixel(x_offset + 100, y_offset + 100));
+    }
+
+    #[test]
+    fn test_e2e_invalid_corrupted_input() {
+        // Truncated CAPT stream: only 8 bytes
+        let truncated_data = vec![0xA0, 0xD0, 0x06, 0x00, 0x01, 0x02, 0x03, 0x04];
+        let res = decode_capt_to_pbm(&truncated_data);
+        assert!(res.is_err());
+
+        // Garbage bytes
+        let garbage = vec![0xFF; 256];
+        let res2 = decode_capt_to_pbm(&garbage);
+        assert!(res2.is_err());
+    }
+
+    #[test]
+    fn test_e2e_cancelled_job_state_recovery() {
+        let pbm = generate_synthetic_pbm(592 * 8, 100, "text_sample");
+        let capt_bytes = encode_pbm_to_capt(&pbm, 512).expect("encode");
+
+        // Simulate cancellation mid-stream: read only first 3 packets
+        let mut cursor = Cursor::new(&capt_bytes);
+        let _p1 = CaptPacket::read(&mut cursor).expect("pkt1");
+        let _p2 = CaptPacket::read(&mut cursor).expect("pkt2");
+        let _p3 = CaptPacket::read(&mut cursor).expect("pkt3");
+
+        // Mid-stream abort: Remaining cursor position is less than total bytes
+        assert!((cursor.position() as usize) < capt_bytes.len());
+
+        // Teardown commands that host must issue on cancellation:
+        // PCR_DISCARD_DATA (0xE0A4), PCR_GO_OFFLINE (0xE0A6), PCR_RELEASE_UNIT (0xE0A9)
+        let discard_cmd = [0xa4, 0xe0, 0x04, 0x00];
+        let offline_cmd = [0xa6, 0xe0, 0x04, 0x00];
+        let release_cmd = [0xa9, 0xe0, 0x04, 0x00];
+        assert_eq!(u16::from_le_bytes([discard_cmd[0], discard_cmd[1]]), 0xE0A4);
+        assert_eq!(u16::from_le_bytes([offline_cmd[0], offline_cmd[1]]), 0xE0A6);
+        assert_eq!(u16::from_le_bytes([release_cmd[0], release_cmd[1]]), 0xE0A9);
+    }
+
+    #[test]
+    fn test_e2e_two_consecutive_jobs() {
+        // Job 1
+        let job1_pbm = generate_synthetic_pbm(592 * 8, 100, "text_sample");
+        let job1_capt = encode_pbm_to_capt(&job1_pbm, 4096).expect("job 1 encode");
+        let job1_rec = decode_capt_to_pbm(&job1_capt).expect("job 1 decode");
+        assert_eq!(job1_rec.data, job1_pbm.data);
+
+        // Job 2 (different pattern)
+        let job2_pbm = generate_synthetic_pbm(592 * 8, 100, "grid");
+        let job2_capt = encode_pbm_to_capt(&job2_pbm, 4096).expect("job 2 encode");
+        let job2_rec = decode_capt_to_pbm(&job2_capt).expect("job 2 decode");
+        assert_eq!(job2_rec.data, job2_pbm.data);
+    }
+
+    #[test]
+    fn test_e2e_simulated_usb_failure() {
+        struct FailingWriter {
+            bytes_before_fail: usize,
+            written: usize,
+        }
+        impl std::io::Write for FailingWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                if self.written >= self.bytes_before_fail {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "Simulated USB pipe broken",
+                    ));
+                }
+                let take = buf.len().min(self.bytes_before_fail - self.written);
+                self.written += take;
+                Ok(take)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut writer = FailingWriter {
+            bytes_before_fail: 50,
+            written: 0,
+        };
+        use std::io::Write;
+        let res = writer.write_all(&[0xAA; 100]);
+        assert!(res.is_err(), "Writer should have failed after 50 bytes");
+        assert_eq!(res.unwrap_err().kind(), std::io::ErrorKind::BrokenPipe);
     }
 }

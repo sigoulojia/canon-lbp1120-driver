@@ -31,6 +31,17 @@ impl PbmImage {
         &mut self.data[start..start + self.line_size]
     }
 
+    #[allow(dead_code)]
+    pub fn get_pixel(&self, x: usize, y: usize) -> bool {
+        if x < self.width && y < self.height {
+            let byte_idx = y * self.line_size + (x / 8);
+            let bit_idx = 7 - (x % 8);
+            (self.data[byte_idx] & (1 << bit_idx)) != 0
+        } else {
+            false
+        }
+    }
+
     pub fn set_pixel(&mut self, x: usize, y: usize, black: bool) {
         if x < self.width && y < self.height {
             let byte_idx = y * self.line_size + (x / 8);
