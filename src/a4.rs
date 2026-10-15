@@ -155,11 +155,11 @@ pub fn draw_dither_patch(img: &mut PbmImage, x: usize, y: usize, w: usize, h: us
     for py in y..(y + h) {
         for px in x..(x + w) {
             let black = match pattern {
-                1 => (px + py) % 8 == 0,                          // ~12%
-                2 => px % 2 == 0 && py % 2 == 0,                  // 25%
-                3 => (px + py) % 2 == 0,                          // 50% checkerboard
-                4 => !(px % 2 == 0 && py % 2 == 0),               // 75%
-                _ => true,                                        // 100% solid
+                1 => (px + py) % 8 == 0,            // ~12%
+                2 => px % 2 == 0 && py % 2 == 0,    // 25%
+                3 => (px + py) % 2 == 0,            // 50% checkerboard
+                4 => !(px % 2 == 0 && py % 2 == 0), // 75%
+                _ => true,                          // 100% solid
             };
             if black {
                 img.set_pixel(px, py, true);
@@ -224,7 +224,13 @@ pub fn generate_a4_test_page() -> PbmImage {
     draw_rect(&mut img, 300, 1500, 4136, 4, 4);
 
     // 5. Halftone Grayscale Calibration Bars (10%, 25%, 50%, 75%, 100%)
-    draw_text(&mut img, "HALFTONE DENSITY CALIBRATION (10% / 25% / 50% / 75% / 100%):", 400, 1560, 4);
+    draw_text(
+        &mut img,
+        "HALFTONE DENSITY CALIBRATION (10% / 25% / 50% / 75% / 100%):",
+        400,
+        1560,
+        4,
+    );
     let patch_w = 700;
     let patch_h = 200;
     let start_px = 500;
@@ -238,7 +244,13 @@ pub fn generate_a4_test_page() -> PbmImage {
     // 6. Center Concentric Target & Alignment Reticle
     let center_x = 2368;
     let center_y = 2800;
-    draw_text(&mut img, "OPTICAL CENTERING & ENGINE ALIGNMENT TARGET", 1100, 2150, 5);
+    draw_text(
+        &mut img,
+        "OPTICAL CENTERING & ENGINE ALIGNMENT TARGET",
+        1100,
+        2150,
+        5,
+    );
     draw_circle(&mut img, center_x, center_y, 500, 4);
     draw_circle(&mut img, center_x, center_y, 400, 3);
     draw_circle(&mut img, center_x, center_y, 300, 3);
@@ -253,7 +265,13 @@ pub fn generate_a4_test_page() -> PbmImage {
     draw_line(&mut img, 4386, 3550, 2636, 4500);
 
     // 7. High-Resolution Line-Pair Frequency Targets
-    draw_text(&mut img, "600 DPI LINE-PAIR RESOLUTION FREQUENCY BARS:", 400, 4600, 4);
+    draw_text(
+        &mut img,
+        "600 DPI LINE-PAIR RESOLUTION FREQUENCY BARS:",
+        400,
+        4600,
+        4,
+    );
     // 1-pixel on / 1-pixel off (300 line pairs / inch)
     for i in 0..200 {
         let ly = 4680 + i * 2;
@@ -270,15 +288,57 @@ pub fn generate_a4_test_page() -> PbmImage {
 
     // 8. Bottom Verification Box
     draw_rect(&mut img, 300, 5200, 4136, 950, 6);
-    draw_text(&mut img, "FIRST PHYSICAL TEST PRINT ON WINUSB X64", 650, 5320, 7);
-    draw_text(&mut img, "HARDWARE REGISTERS: BASIC=0X78 | ENGINE=0X0000 | PAPER=0X80", 450, 5450, 4);
-    draw_text(&mut img, "USB PROTOCOL     : RAW BULK CAPT 1.0 (NO WRAPPER / NO POSTSCRIPT)", 450, 5530, 4);
-    draw_text(&mut img, "DEVICE ENUM      : USB/VID_04A9&PID_262B/0353S4CQ (CANON LBP-1120)", 450, 5610, 4);
-    draw_text(&mut img, "SYSTEM DATE      : 2026-10-14 | REA VERIFIED ROUNDTRIP PASSED", 450, 5690, 4);
-    draw_text(&mut img, "[SUCCESS: 100% BIT-EXACT HARDWARE ENGINE TEST]", 750, 5850, 6);
+    draw_text(
+        &mut img,
+        "FIRST PHYSICAL TEST PRINT ON WINUSB X64",
+        650,
+        5320,
+        7,
+    );
+    draw_text(
+        &mut img,
+        "HARDWARE REGISTERS: BASIC=0X78 | ENGINE=0X0000 | PAPER=0X80",
+        450,
+        5450,
+        4,
+    );
+    draw_text(
+        &mut img,
+        "USB PROTOCOL     : RAW BULK CAPT 1.0 (NO WRAPPER / NO POSTSCRIPT)",
+        450,
+        5530,
+        4,
+    );
+    draw_text(
+        &mut img,
+        "DEVICE ENUM      : USB/VID_04A9&PID_262B/0353S4CQ (CANON LBP-1120)",
+        450,
+        5610,
+        4,
+    );
+    draw_text(
+        &mut img,
+        "SYSTEM DATE      : 2026-10-14 | REA VERIFIED ROUNDTRIP PASSED",
+        450,
+        5690,
+        4,
+    );
+    draw_text(
+        &mut img,
+        "[SUCCESS: 100% BIT-EXACT HARDWARE ENGINE TEST]",
+        750,
+        5850,
+        6,
+    );
 
     // Bottom margin footer
-    draw_text(&mut img, "CANON LASERSHOT LBP-1120 WINUSB PROJECT - ARCHITECTURE BY ANTIGRAVITY", 700, 6300, 3);
+    draw_text(
+        &mut img,
+        "CANON LASERSHOT LBP-1120 WINUSB PROJECT - ARCHITECTURE BY ANTIGRAVITY",
+        700,
+        6300,
+        3,
+    );
 
     img
 }

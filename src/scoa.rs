@@ -49,37 +49,39 @@ impl<'a> ScoaState<'a> {
 
     fn next_func(&self, idx: usize, last: Option<&ScoaFunc>) -> Option<ScoaFunc> {
         let prev = self.prev_line;
-        if idx >= 1 && self.line[idx] == self.line[idx - 1] && last.map_or(true, |l| l.func_type != ScoaFuncType::Copy) {
-            if let Some(l) = last {
-                if l.func_type == ScoaFuncType::Repeat {
-                    return None;
-                } else if l.count == 1 {
-                    return None;
-                }
+        if idx >= 1
+            && self.line[idx] == self.line[idx - 1]
+            && last.is_none_or(|l| l.func_type != ScoaFuncType::Copy)
+        {
+            if let Some(l) = last
+                && (l.func_type == ScoaFuncType::Repeat || l.count == 1)
+            {
+                return None;
             }
             return Some(ScoaFunc {
                 func_type: ScoaFuncType::Repeat,
                 index: idx - 1,
                 count: 2,
             });
-        } else if let Some(prev_bytes) = prev {
-            if idx < prev_bytes.len() && self.line[idx] == prev_bytes[idx] {
-                if let Some(l) = last {
-                    if l.func_type == ScoaFuncType::Copy {
-                        return None;
-                    }
-                }
-                return Some(ScoaFunc {
-                    func_type: ScoaFuncType::Copy,
-                    index: idx,
-                    count: 1,
-                });
-            }
-        }
-        if let Some(l) = last {
-            if l.func_type == ScoaFuncType::Raw {
+        } else if let Some(prev_bytes) = prev
+            && idx < prev_bytes.len()
+            && self.line[idx] == prev_bytes[idx]
+        {
+            if let Some(l) = last
+                && l.func_type == ScoaFuncType::Copy
+            {
                 return None;
             }
+            return Some(ScoaFunc {
+                func_type: ScoaFuncType::Copy,
+                index: idx,
+                count: 1,
+            });
+        }
+        if let Some(l) = last
+            && l.func_type == ScoaFuncType::Raw
+        {
+            return None;
         }
         Some(ScoaFunc {
             func_type: ScoaFuncType::Raw,
@@ -106,7 +108,10 @@ impl<'a> ScoaState<'a> {
         while self.index < self.line.len() {
             let idx = self.index;
             let next = if let Some(ref mut l) = self.last {
-                if idx >= 1 && self.line[idx] == self.line[idx - 1] && l.func_type != ScoaFuncType::Copy {
+                if idx >= 1
+                    && self.line[idx] == self.line[idx - 1]
+                    && l.func_type != ScoaFuncType::Copy
+                {
                     if l.func_type == ScoaFuncType::Repeat {
                         l.count += 1;
                         None
@@ -122,7 +127,10 @@ impl<'a> ScoaState<'a> {
                             count: 2,
                         })
                     }
-                } else if self.prev_line.map_or(false, |p| idx < p.len() && self.line[idx] == p[idx]) {
+                } else if self
+                    .prev_line
+                    .is_some_and(|p| idx < p.len() && self.line[idx] == p[idx])
+                {
                     if l.func_type == ScoaFuncType::Copy {
                         l.count += 1;
                         None
@@ -184,24 +192,26 @@ impl ScoaEncoder {
     }
 
     fn extend(&mut self, count: usize) {
-        assert!(count >= 8 && count <= 255);
+        assert!((8..=255).contains(&count));
         self.video_data.push(0xa0 | (((count >> 3) & 0x1f) as u8));
     }
 
     fn copy_long(&mut self, copy_count: usize) {
-        assert!(copy_count >= 8 && copy_count <= 248 && copy_count % 8 == 0);
-        self.video_data.push(0x80 | (((copy_count >> 3) & 0x1f) as u8));
+        assert!((8..=248).contains(&copy_count) && copy_count.is_multiple_of(8));
+        self.video_data
+            .push(0x80 | (((copy_count >> 3) & 0x1f) as u8));
     }
 
     fn copy_short(&mut self, copy_count: usize) {
-        assert!(copy_count >= 1 && copy_count <= 7);
+        assert!((1..=7).contains(&copy_count));
         self.video_data.push(0xc0 | (copy_count as u8 & 7));
     }
 
     fn copy_then_raw(&mut self, copy_count: usize, raw: &[u8]) {
         assert!(copy_count <= 7);
         assert!(!raw.is_empty() && raw.len() <= 7);
-        self.video_data.push((((raw.len() & 7) as u8) << 3) | (copy_count as u8 & 7));
+        self.video_data
+            .push((((raw.len() & 7) as u8) << 3) | (copy_count as u8 & 7));
         self.video_data.extend_from_slice(raw);
     }
 
@@ -209,49 +219,55 @@ impl ScoaEncoder {
         assert!(copy_count <= 7);
         assert!(raw.len() >= 8 && raw.len() <= 255);
         self.extend(raw.len());
-        self.video_data.push(0xc0 | (((raw.len() & 7) as u8) << 3) | (copy_count as u8 & 7));
+        self.video_data
+            .push(0xc0 | (((raw.len() & 7) as u8) << 3) | (copy_count as u8 & 7));
         self.video_data.extend_from_slice(raw);
     }
 
     fn copy_then_repeat(&mut self, copy_count: usize, repeat_count: usize, repeat_byte: u8) {
         assert!(copy_count <= 7);
-        assert!(repeat_count >= 2 && repeat_count <= 7);
-        self.video_data.push(0x40 | (((repeat_count & 7) as u8) << 3) | (copy_count as u8 & 7));
+        assert!((2..=7).contains(&repeat_count));
+        self.video_data
+            .push(0x40 | (((repeat_count & 7) as u8) << 3) | (copy_count as u8 & 7));
         self.video_data.push(repeat_byte);
     }
 
     fn copy_then_repeat_long(&mut self, copy_count: usize, repeat_count: usize, repeat_byte: u8) {
         assert!(copy_count <= 7);
-        assert!(repeat_count >= 8 && repeat_count <= 255);
+        assert!((8..=255).contains(&repeat_count));
         self.extend(repeat_count);
-        self.video_data.push(0x80 | (((repeat_count & 7) as u8) << 3) | (copy_count as u8 & 7));
+        self.video_data
+            .push(0x80 | (((repeat_count & 7) as u8) << 3) | (copy_count as u8 & 7));
         self.video_data.push(repeat_byte);
     }
 
     fn repeat_then_raw(&mut self, repeat_count: usize, repeat_byte: u8, raw: &[u8]) {
-        assert!(repeat_count >= 2 && repeat_count <= 7);
+        assert!((2..=7).contains(&repeat_count));
         assert!(!raw.is_empty() && raw.len() <= 7);
-        self.video_data.push(0xc0 | (((repeat_count & 7) as u8) << 3) | (raw.len() as u8 & 7));
+        self.video_data
+            .push(0xc0 | (((repeat_count & 7) as u8) << 3) | (raw.len() as u8 & 7));
         self.video_data.push(repeat_byte);
         self.video_data.extend_from_slice(raw);
     }
 
     fn repeat_then_raw_long(&mut self, repeat_count: usize, repeat_byte: u8, raw: &[u8]) {
-        assert!(repeat_count >= 2 && repeat_count <= 7);
+        assert!((2..=7).contains(&repeat_count));
         assert!(raw.len() >= 8 && raw.len() <= 255);
         self.extend(raw.len());
-        self.video_data.push(0x40 | (((repeat_count & 7) as u8) << 3) | (raw.len() as u8 & 7));
+        self.video_data
+            .push(0x40 | (((repeat_count & 7) as u8) << 3) | (raw.len() as u8 & 7));
         self.video_data.push(repeat_byte);
         self.video_data.extend_from_slice(raw);
     }
 
     fn repeat_x(&mut self, repeat_count: usize) {
-        assert!(repeat_count >= 1 && repeat_count <= 7);
-        self.video_data.push(0xc0 | (((repeat_count & 7) as u8) << 3));
+        assert!((1..=7).contains(&repeat_count));
+        self.video_data
+            .push(0xc0 | (((repeat_count & 7) as u8) << 3));
     }
 
     fn repeat_x_long(&mut self, repeat_count: usize) {
-        assert!(repeat_count >= 8 && repeat_count <= 255);
+        assert!((8..=255).contains(&repeat_count));
         self.extend(repeat_count);
         self.video_data.push(((repeat_count & 7) as u8) << 3);
     }
@@ -294,7 +310,12 @@ impl ScoaEncoder {
         self.emit_copy_then_raw(0, raw);
     }
 
-    fn emit_copy_then_repeat(&mut self, mut copy_count: usize, mut repeat_count: usize, repeat_byte: u8) {
+    fn emit_copy_then_repeat(
+        &mut self,
+        mut copy_count: usize,
+        mut repeat_count: usize,
+        repeat_byte: u8,
+    ) {
         if copy_count <= 7 {
             while repeat_count >= 8 {
                 let rep = repeat_count.min(255);
@@ -419,7 +440,11 @@ impl ScoaEncoder {
                         let next = funcs[i + 1];
                         if next.func_type == ScoaFuncType::Raw {
                             i += 2;
-                            self.emit_repeat_then_raw(curr.count, line[curr.index], next.payload(line));
+                            self.emit_repeat_then_raw(
+                                curr.count,
+                                line[curr.index],
+                                next.payload(line),
+                            );
                             continue;
                         }
                     }
@@ -437,7 +462,7 @@ impl ScoaEncoder {
 
     pub fn finish(mut self) -> Vec<u8> {
         // Enforce 16-bit word alignment
-        if (self.video_data.len() + 1) % 2 != 0 {
+        if !(self.video_data.len() + 1).is_multiple_of(2) {
             self.video_data.push(OP_NOP);
         }
         self.video_data.push(OP_EOP);
@@ -479,7 +504,7 @@ impl ScoaDecoder {
     }
 
     fn repeat(&mut self, count: usize, byte: u8) {
-        self.decoded_data.extend(std::iter::repeat(byte).take(count));
+        self.decoded_data.extend(std::iter::repeat_n(byte, count));
     }
 
     fn end_line(&mut self) -> io::Result<()> {
@@ -599,5 +624,181 @@ impl ScoaDecoder {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn roundtrip(lines: &[Vec<u8>], line_size: usize) -> Vec<u8> {
+        let mut encoder = ScoaEncoder::new(line_size);
+        for line in lines {
+            encoder.encode_line(line);
+        }
+        let encoded = encoder.finish();
+        assert_eq!(
+            encoded.len() % 2,
+            0,
+            "Encoded stream must be 16-bit word aligned"
+        );
+
+        let mut decoder = ScoaDecoder::new(line_size);
+        let mut cursor = Cursor::new(&encoded);
+        decoder.decode_stream(&mut cursor).expect("Decoder failed");
+        assert!(decoder.eop_reached, "EOP marker must be reached");
+
+        let expected_total: usize = lines.len() * line_size;
+        assert_eq!(
+            decoder.decoded_data.len(),
+            expected_total,
+            "Decoded length mismatch"
+        );
+
+        let mut reconstructed = Vec::new();
+        for line in lines {
+            reconstructed.extend_from_slice(line);
+        }
+        assert_eq!(
+            decoder.decoded_data, reconstructed,
+            "Reconstructed raster does not match original"
+        );
+
+        encoded
+    }
+
+    #[test]
+    fn test_finish_16bit_word_alignment() {
+        for n in 0..=30 {
+            let mut encoder = ScoaEncoder::new(10);
+            for _ in 0..n {
+                encoder.video_data.push(0x40); // OP_NOP
+            }
+            let res = encoder.finish();
+            assert_eq!(
+                res.len() % 2,
+                0,
+                "Failed 16-bit alignment when initial len was {}",
+                n
+            );
+            assert_eq!(*res.last().unwrap(), OP_EOP);
+        }
+    }
+
+    #[test]
+    fn test_all_white_lines() {
+        let line_size = 592;
+        let lines = vec![vec![0u8; line_size]; 10];
+        let encoded = roundtrip(&lines, line_size);
+        // All white should compress significantly
+        assert!(encoded.len() < lines.len() * line_size / 2);
+    }
+
+    #[test]
+    fn test_all_black_lines() {
+        let line_size = 592;
+        let lines = vec![vec![0xFFu8; line_size]; 10];
+        let encoded = roundtrip(&lines, line_size);
+        assert!(encoded.len() < lines.len() * line_size / 2);
+    }
+
+    #[test]
+    fn test_alternating_stripes() {
+        let line_size = 592;
+        let mut lines = Vec::new();
+        for y in 0..20 {
+            let val = if y % 2 == 0 { 0xAA } else { 0x55 };
+            lines.push(vec![val; line_size]);
+        }
+        roundtrip(&lines, line_size);
+    }
+
+    #[test]
+    fn test_repeat_x_byte() {
+        // REPEAT_X_BYTE is 0x43 - tests repeat_x and repeat_x_long opcodes
+        let line_size = 300;
+        let lines = vec![vec![REPEAT_X_BYTE; line_size]; 5];
+        roundtrip(&lines, line_size);
+    }
+
+    #[test]
+    fn test_various_run_lengths() {
+        for len in [1, 2, 7, 8, 9, 247, 248, 249, 255, 256, 500] {
+            let mut line = vec![0x00; len];
+            // Put some repeat at start
+            for b in line.iter_mut().take(len.min(50)) {
+                *b = 0x12;
+            }
+            let lines = vec![line];
+            roundtrip(&lines, len);
+        }
+    }
+
+    #[test]
+    fn test_copy_and_eol_tail() {
+        let line_size = 64;
+        let line1 = vec![0x11; line_size];
+        let mut line2 = line1.clone();
+        // Change only first 8 bytes of line2, rest should be copied via OP_EOL
+        for b in line2.iter_mut().take(8) {
+            *b = 0x22;
+        }
+        let lines = vec![line1, line2];
+        roundtrip(&lines, line_size);
+    }
+
+    #[test]
+    fn test_pseudorandom_noise() {
+        let line_size = 128;
+        let mut lines = Vec::new();
+        let mut lcg: u32 = 123456789;
+        for _ in 0..25 {
+            let mut line = vec![0u8; line_size];
+            for byte in line.iter_mut() {
+                lcg = lcg.wrapping_mul(1664525).wrapping_add(1013904223);
+                *byte = (lcg >> 16) as u8;
+            }
+            lines.push(line);
+        }
+        roundtrip(&lines, line_size);
+    }
+
+    #[test]
+    fn test_decoder_invalid_opcode() {
+        let invalid_stream = [0xFF, 0x00];
+        let mut decoder = ScoaDecoder::new(10);
+        let mut cursor = Cursor::new(&invalid_stream);
+        let err = decoder.decode_stream(&mut cursor);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_decoder_truncated_stream() {
+        // Stream cut off mid-command
+        let truncated = [0x00]; // CopyThenRaw with 0 counts, expects raw bytes
+        let mut decoder = ScoaDecoder::new(10);
+        let mut cursor = Cursor::new(&truncated);
+        let _ = decoder.decode_stream(&mut cursor);
+        assert!(!decoder.eop_reached);
+    }
+
+    #[test]
+    fn test_full_a4_roundtrip() {
+        use crate::a4::generate_a4_test_page;
+        let pbm = generate_a4_test_page();
+        let mut lines = Vec::with_capacity(pbm.height);
+        for y in 0..pbm.height {
+            lines.push(pbm.line(y).to_vec());
+        }
+        let encoded = roundtrip(&lines, pbm.line_size);
+        // Verify reasonable compression on test page
+        assert!(encoded.len() < pbm.data.len());
+        println!(
+            "Full A4 Test Page SCoA: {} -> {} bytes ({:.2}%)",
+            pbm.data.len(),
+            encoded.len(),
+            (encoded.len() as f64) / (pbm.data.len() as f64) * 100.0
+        );
     }
 }

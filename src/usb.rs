@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(dead_code, clippy::upper_case_acronyms)]
 use std::ffi::c_void;
 use std::io;
 use std::ptr;
@@ -171,18 +171,22 @@ impl UsbPrinter {
 
         // Try querying registry if explicit candidate paths fail
         if let Ok(output) = std::process::Command::new("reg")
-            .args(["query", r"HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_04A9&PID_262B", "/s"])
+            .args([
+                "query",
+                r"HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_04A9&PID_262B",
+                "/s",
+            ])
             .output()
         {
             let text = String::from_utf8_lossy(&output.stdout);
             for line in text.lines() {
-                if line.contains("SymbolicName") {
-                    if let Some(val) = line.split("REG_SZ").nth(1) {
-                        let trimmed = val.trim();
-                        let clean_path = trimmed.replace(r"\??\", r"\\?\");
-                        if let Ok(dev) = Self::open(&clean_path) {
-                            return Ok(dev);
-                        }
+                if line.contains("SymbolicName")
+                    && let Some(val) = line.split("REG_SZ").nth(1)
+                {
+                    let trimmed = val.trim();
+                    let clean_path = trimmed.replace(r"\??\", r"\\?\");
+                    if let Ok(dev) = Self::open(&clean_path) {
+                        return Ok(dev);
                     }
                 }
             }
@@ -195,7 +199,10 @@ impl UsbPrinter {
     }
 
     pub fn open(device_path: &str) -> io::Result<Self> {
-        let wide: Vec<u16> = device_path.encode_utf16().chain(std::iter::once(0)).collect();
+        let wide: Vec<u16> = device_path
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         let h_file = unsafe {
             CreateFileW(
@@ -213,7 +220,10 @@ impl UsbPrinter {
             let err = unsafe { GetLastError() };
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
-                format!("CreateFileW failed for '{}' (Win32 error: {})", device_path, err),
+                format!(
+                    "CreateFileW failed for '{}' (Win32 error: {})",
+                    device_path, err
+                ),
             ));
         }
 
@@ -222,24 +232,54 @@ impl UsbPrinter {
         if res == 0 {
             let err = unsafe { GetLastError() };
             unsafe { CloseHandle(h_file) };
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("WinUsb_Initialize failed (Win32 error: {})", err),
-            ));
+            return Err(io::Error::other(format!(
+                "WinUsb_Initialize failed (Win32 error: {})",
+                err
+            )));
         }
 
         // Configure default pipe policies
         unsafe {
             let timeout: u32 = 5000;
-            WinUsb_SetPipePolicy(winusb, 0x01, PIPE_TRANSFER_TIMEOUT, 4, &timeout as *const _ as *const c_void);
-            WinUsb_SetPipePolicy(winusb, 0x82, PIPE_TRANSFER_TIMEOUT, 4, &timeout as *const _ as *const c_void);
+            WinUsb_SetPipePolicy(
+                winusb,
+                0x01,
+                PIPE_TRANSFER_TIMEOUT,
+                4,
+                &timeout as *const _ as *const c_void,
+            );
+            WinUsb_SetPipePolicy(
+                winusb,
+                0x82,
+                PIPE_TRANSFER_TIMEOUT,
+                4,
+                &timeout as *const _ as *const c_void,
+            );
 
             let allow_partial: u8 = 1;
-            WinUsb_SetPipePolicy(winusb, 0x82, ALLOW_PARTIAL_READS, 1, &allow_partial as *const _ as *const c_void);
+            WinUsb_SetPipePolicy(
+                winusb,
+                0x82,
+                ALLOW_PARTIAL_READS,
+                1,
+                &allow_partial as *const _ as *const c_void,
+            );
 
             let auto_stall: u8 = 1;
-            WinUsb_SetPipePolicy(winusb, 0x01, AUTO_CLEAR_STALL, 1, &auto_stall as *const _ as *const c_void);
-            WinUsb_SetPipePolicy(winusb, 0x82, AUTO_CLEAR_STALL, 1, &auto_stall as *const _ as *const c_void);
+            WinUsb_SetPipePolicy(
+                winusb,
+                0x01,
+                AUTO_CLEAR_STALL,
+                1,
+                &auto_stall as *const _ as *const c_void,
+            );
+            WinUsb_SetPipePolicy(
+                winusb,
+                0x82,
+                AUTO_CLEAR_STALL,
+                1,
+                &auto_stall as *const _ as *const c_void,
+            );
         }
 
         Ok(Self {
@@ -271,10 +311,10 @@ impl UsbPrinter {
         };
         if res == 0 || trans < 2 {
             let err = unsafe { GetLastError() };
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("GET_DEVICE_ID failed (Win32 error: {})", err),
-            ));
+            return Err(io::Error::other(format!(
+                "GET_DEVICE_ID failed (Win32 error: {})",
+                err
+            )));
         }
         let length = ((buf[0] as usize) << 8) | (buf[1] as usize);
         let actual_len = length.min((trans as usize).saturating_sub(2));
@@ -303,43 +343,65 @@ impl UsbPrinter {
         };
         if res == 0 {
             let err = unsafe { GetLastError() };
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("GET_PORT_STATUS failed (Win32 error: {})", err),
-            ));
+            return Err(io::Error::other(format!(
+                "GET_PORT_STATUS failed (Win32 error: {})",
+                err
+            )));
         }
-        Ok(UsbPortStatus {
+        Ok(Self::parse_port_status(b))
+    }
+
+    pub fn parse_port_status(b: u8) -> UsbPortStatus {
+        UsbPortStatus {
             raw: b,
             paper_empty: (b & 0x20) != 0,
             selected: (b & 0x10) != 0,
             no_error: (b & 0x08) != 0,
-        })
+        }
     }
 
     pub fn write_pipe(&self, pipe_id: u8, data: &[u8]) -> io::Result<usize> {
-        let mut transferred = 0u32;
-        let res = unsafe {
-            WinUsb_WritePipe(
-                self.winusb_handle,
-                pipe_id,
-                data.as_ptr(),
-                data.len() as u32,
-                &mut transferred,
-                ptr::null_mut(),
-            )
-        };
-        if res == 0 {
-            let err = unsafe { GetLastError() };
-            eprintln!(
-                "[USB Write FAIL] Pipe 0x{:02X}: requested {} bytes, written {} bytes, Win32 error: {}",
-                pipe_id, data.len(), transferred, err
-            );
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("WinUsb_WritePipe failed (Pipe 0x{:02X}, Win32 error: {})", pipe_id, err),
-            ));
+        let mut total_written = 0;
+        while total_written < data.len() {
+            let mut transferred = 0u32;
+            let chunk = &data[total_written..];
+            let res = unsafe {
+                WinUsb_WritePipe(
+                    self.winusb_handle,
+                    pipe_id,
+                    chunk.as_ptr(),
+                    chunk.len() as u32,
+                    &mut transferred,
+                    ptr::null_mut(),
+                )
+            };
+            if res == 0 {
+                let err = unsafe { GetLastError() };
+                eprintln!(
+                    "[USB Write FAIL] Pipe 0x{:02X}: requested {} bytes, written {}/{} bytes, Win32 error: {}",
+                    pipe_id,
+                    chunk.len(),
+                    total_written,
+                    data.len(),
+                    err
+                );
+                return Err(io::Error::other(format!(
+                    "WinUsb_WritePipe failed (Pipe 0x{:02X}, Win32 error: {})",
+                    pipe_id, err
+                )));
+            }
+            if transferred == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    format!(
+                        "WinUsb_WritePipe transferred 0 bytes on Pipe 0x{:02X}",
+                        pipe_id
+                    ),
+                ));
+            }
+            total_written += transferred as usize;
         }
-        Ok(transferred as usize)
+        Ok(total_written)
     }
 
     pub fn read_pipe(&self, pipe_id: u8, buf: &mut [u8]) -> io::Result<usize> {
@@ -356,12 +418,32 @@ impl UsbPrinter {
         };
         if res == 0 {
             let err = unsafe { GetLastError() };
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("WinUsb_ReadPipe failed (Pipe 0x{:02X}, Win32 error: {})", pipe_id, err),
-            ));
+            return Err(io::Error::other(format!(
+                "WinUsb_ReadPipe failed (Pipe 0x{:02X}, Win32 error: {})",
+                pipe_id, err
+            )));
         }
         Ok(transferred as usize)
+    }
+
+    pub fn read_pipe_exact(&self, pipe_id: u8, buf: &mut [u8]) -> io::Result<()> {
+        let mut total_read = 0;
+        while total_read < buf.len() {
+            let n = self.read_pipe(pipe_id, &mut buf[total_read..])?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!(
+                        "Unexpected EOF on Pipe 0x{:02X} (read {}/{} bytes)",
+                        pipe_id,
+                        total_read,
+                        buf.len()
+                    ),
+                ));
+            }
+            total_read += n;
+        }
+        Ok(())
     }
 
     pub fn reset_pipes(&self) -> io::Result<()> {
@@ -372,33 +454,23 @@ impl UsbPrinter {
         Ok(())
     }
 
-    pub fn query_extended_status(&self) -> io::Result<ExtendedStatusReport> {
-        // Send PC_GET_EXTENDED_STATUS (0xA0A0, size 4)
-        let cmd = [0xa0, 0xa0, 0x04, 0x00];
-        self.write_pipe(0x01, &cmd)?;
-
-        // First read: 6-byte header
-        let mut header = [0u8; 6];
-        self.read_pipe(0x82, &mut header)?;
-
+    pub fn parse_extended_status(
+        header: &[u8; 6],
+        payload: &[u8],
+    ) -> io::Result<ExtendedStatusReport> {
         let opcode = u16::from_le_bytes([header[0], header[1]]);
-        let total_size = u16::from_le_bytes([header[2], header[3]]);
         if opcode != 0xA0A0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Unexpected opcode 0x{:04X} in extended status reply", opcode),
+                format!(
+                    "Unexpected opcode 0x{:04X} in extended status reply",
+                    opcode
+                ),
             ));
         }
 
         let basic = header[4];
-        let _changed = header[5];
-
-        let mut payload = vec![0u8; (total_size as usize).saturating_sub(6)];
-        if !payload.is_empty() {
-            self.read_pipe(0x82, &mut payload)?;
-        }
-
-        let aux = payload.get(0).copied().unwrap_or(0);
+        let aux = payload.first().copied().unwrap_or(0);
         let controller = payload.get(1).copied().unwrap_or(0);
         let paper_available_bits = payload.get(2).copied().unwrap_or(0);
         let engine_raw = if payload.len() >= 6 {
@@ -407,10 +479,26 @@ impl UsbPrinter {
             0
         };
 
-        let start_pages = if payload.len() >= 8 { u16::from_le_bytes([payload[6], payload[7]]) } else { 0 };
-        let printing_pages = if payload.len() >= 10 { u16::from_le_bytes([payload[8], payload[9]]) } else { 0 };
-        let shipped_pages = if payload.len() >= 12 { u16::from_le_bytes([payload[10], payload[11]]) } else { 0 };
-        let printed_pages = if payload.len() >= 14 { u16::from_le_bytes([payload[12], payload[13]]) } else { 0 };
+        let start_pages = if payload.len() >= 8 {
+            u16::from_le_bytes([payload[6], payload[7]])
+        } else {
+            0
+        };
+        let printing_pages = if payload.len() >= 10 {
+            u16::from_le_bytes([payload[8], payload[9]])
+        } else {
+            0
+        };
+        let shipped_pages = if payload.len() >= 12 {
+            u16::from_le_bytes([payload[10], payload[11]])
+        } else {
+            0
+        };
+        let printed_pages = if payload.len() >= 14 {
+            u16::from_le_bytes([payload[12], payload[13]])
+        } else {
+            0
+        };
 
         Ok(ExtendedStatusReport {
             basic,
@@ -434,12 +522,31 @@ impl UsbPrinter {
         })
     }
 
+    pub fn query_extended_status(&self) -> io::Result<ExtendedStatusReport> {
+        // Send PC_GET_EXTENDED_STATUS (0xA0A0, size 4)
+        let cmd = [0xa0, 0xa0, 0x04, 0x00];
+        self.write_pipe(0x01, &cmd)?;
+
+        // First read: 6-byte header
+        let mut header = [0u8; 6];
+        self.read_pipe_exact(0x82, &mut header)?;
+
+        let total_size = u16::from_le_bytes([header[2], header[3]]);
+        let payload_len = (total_size as usize).saturating_sub(6);
+        let mut payload = vec![0u8; payload_len];
+        if !payload.is_empty() {
+            self.read_pipe_exact(0x82, &mut payload)?;
+        }
+
+        Self::parse_extended_status(&header, &payload)
+    }
+
     pub fn query_basic_status(&self) -> io::Result<[u8; 6]> {
         // Send PCR_GET_BASIC_STATUS (0xE0A0, size 4)
         let cmd = [0xa0, 0xe0, 0x04, 0x00];
         self.write_pipe(0x01, &cmd)?;
         let mut buf = [0u8; 6];
-        self.read_pipe(0x82, &mut buf)?;
+        self.read_pipe_exact(0x82, &mut buf)?;
         Ok(buf)
     }
 
@@ -471,7 +578,7 @@ impl UsbPrinter {
         // PCR_GO_ONLINE: 0xE0A5, size 12
         let mut cmd = Vec::with_capacity(12);
         cmd.extend_from_slice(&0xE0A5u16.to_le_bytes()); // Opcode
-        cmd.extend_from_slice(&12u16.to_le_bytes());     // Size = 12
+        cmd.extend_from_slice(&12u16.to_le_bytes()); // Size = 12
         cmd.extend_from_slice(&0xADEADBEEu32.to_le_bytes()); // Magic 0xADEADBEE
         cmd.extend_from_slice(&page_number.to_le_bytes());
         cmd.extend_from_slice(&[0x00, 0x00]);
@@ -516,7 +623,10 @@ impl UsbPrinter {
         let res = unsafe { WinUsb_QueryInterfaceSettings(self.winusb_handle, 0, &mut desc) };
         if res == 0 {
             let err = unsafe { GetLastError() };
-            return Err(io::Error::new(io::ErrorKind::Other, format!("WinUsb_QueryInterfaceSettings failed: {}", err)));
+            return Err(io::Error::other(format!(
+                "WinUsb_QueryInterfaceSettings failed: {}",
+                err
+            )));
         }
         let mut pipes = Vec::new();
         for i in 0..desc.num_endpoints {
@@ -538,7 +648,76 @@ impl Drop for UsbPrinter {
         }
         if !self.file_handle.is_null() && self.file_handle != INVALID_HANDLE_VALUE {
             unsafe { CloseHandle(self.file_handle) };
-            self.file_handle = ptr::null_mut();
+            self.file_handle = INVALID_HANDLE_VALUE;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_port_status_decoding() {
+        // Selected (0x10), No Error (0x08), Paper Not Empty (0x00)
+        let st = UsbPrinter::parse_port_status(0x18);
+        assert!(st.selected);
+        assert!(st.no_error);
+        assert!(!st.paper_empty);
+
+        // Paper Empty (0x20)
+        let st2 = UsbPrinter::parse_port_status(0x28);
+        assert!(st2.paper_empty);
+        assert!(st2.no_error);
+        assert!(!st2.selected);
+    }
+
+    #[test]
+    fn test_extended_status_healthy_decoding() {
+        // Header: Opcode A0A0, size 20 (0x0014), basic 0x40 (UnitFree=true, Online=true)
+        let header = [0xA0, 0xA0, 0x14, 0x00, 0x40, 0x00];
+        // Payload: aux=0x00, controller=0x00, paper_avail=0x80 (paper in tray),
+        // pad=0, engine_raw=0x0000 (all healthy),
+        // start_pages=1, printing_pages=1, shipped_pages=1, printed_pages=1
+        let payload = [
+            0x00, 0x00, 0x80, 0x00, 0x00, 0x00, // engine_raw
+            0x01, 0x00, // start_pages = 1
+            0x01, 0x00, // printing_pages = 1
+            0x01, 0x00, // shipped_pages = 1
+            0x01, 0x00, // printed_pages = 1
+        ];
+
+        let report = UsbPrinter::parse_extended_status(&header, &payload).unwrap();
+        assert!(report.unit_free);
+        assert!(report.online);
+        assert!(!report.door_open);
+        assert!(!report.no_cartridge);
+        assert!(!report.paper_jam);
+        assert!(!report.no_paper);
+        assert!(!report.waiting);
+        assert!(!report.service_call);
+        assert_eq!(report.shipped_pages, 1);
+    }
+
+    #[test]
+    fn test_extended_status_error_flags() {
+        let header = [0xA0, 0xA0, 0x14, 0x00, 0x00, 0x00];
+        // engine_raw = 0x4100 (door_open=0x4000 | paper_jam=0x0100)
+        let payload = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x41, // engine_raw = 0x4100
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+
+        let report = UsbPrinter::parse_extended_status(&header, &payload).unwrap();
+        assert!(report.door_open);
+        assert!(report.paper_jam);
+        assert!(report.no_paper); // paper_available_bits & 0x80 == 0
+    }
+
+    #[test]
+    fn test_extended_status_invalid_opcode() {
+        let bad_header = [0x12, 0x34, 0x06, 0x00, 0x00, 0x00];
+        let payload = [];
+        assert!(UsbPrinter::parse_extended_status(&bad_header, &payload).is_err());
     }
 }

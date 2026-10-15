@@ -1,10 +1,10 @@
 use crate::pbm::PbmImage;
 use std::error::Error;
-use windows::core::HSTRING;
 use windows::Data::Pdf::{PdfDocument, PdfPageRenderOptions};
 use windows::Graphics::Imaging::BitmapDecoder;
 use windows::Storage::StorageFile;
 use windows::Storage::Streams::InMemoryRandomAccessStream;
+use windows::core::HSTRING;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PageRenderTiming {
@@ -51,7 +51,10 @@ impl std::fmt::Display for HalftoneMode {
 }
 
 #[allow(dead_code)]
-pub fn render_pdf_page(doc: &PdfDocument, page_idx: u32) -> Result<(PbmImage, PageRenderTiming), Box<dyn Error>> {
+pub fn render_pdf_page(
+    doc: &PdfDocument,
+    page_idx: u32,
+) -> Result<(PbmImage, PageRenderTiming), Box<dyn Error>> {
     render_pdf_page_with_mode(doc, page_idx, HalftoneMode::Normal)
 }
 
@@ -63,7 +66,11 @@ pub fn render_pdf_page_with_mode(
     let t_raster = std::time::Instant::now();
     let page_count = doc.PageCount()?;
     if page_idx >= page_count {
-        return Err(format!("Page index {} exceeds document page count {}", page_idx, page_count).into());
+        return Err(format!(
+            "Page index {} exceeds document page count {}",
+            page_idx, page_count
+        )
+        .into());
     }
 
     let page = doc.GetPage(page_idx)?;
@@ -72,7 +79,8 @@ pub fn render_pdf_page_with_mode(
     options.SetDestinationWidth(4736)?;
 
     let stream = InMemoryRandomAccessStream::new()?;
-    page.RenderWithOptionsToStreamAsync(&stream, &options)?.join()?;
+    page.RenderWithOptionsToStreamAsync(&stream, &options)?
+        .join()?;
 
     // Rewind stream to beginning
     stream.Seek(0)?;
@@ -169,17 +177,25 @@ pub fn render_pdf_page_with_mode(
                 if is_black {
                     pbm_line[x / 8] |= 1 << (7 - (x % 8));
                     black_pixels += 1;
-                    if x < min_x { min_x = x; }
-                    if x > max_x { max_x = x; }
-                    if y < min_y { min_y = y; }
-                    if y > max_y { max_y = y; }
+                    if x < min_x {
+                        min_x = x;
+                    }
+                    if x > max_x {
+                        max_x = x;
+                    }
+                    if y < min_y {
+                        min_y = y;
+                    }
+                    if y > max_y {
+                        max_y = y;
+                    }
                 }
 
                 // Distribute error: 7/16 right, 3/16 down-left, 5/16 down, 1/16 down-right
                 err_curr[x_err + 1] += (error * 7 / 16) as i16;
                 err_next[x_err - 1] += (error * 3 / 16) as i16;
                 err_next[x_err] += (error * 5 / 16) as i16;
-                err_next[x_err + 1] += (error * 1 / 16) as i16;
+                err_next[x_err + 1] += (error / 16) as i16;
             }
         } else {
             // Right to Left scan (Serpentine)
@@ -238,17 +254,25 @@ pub fn render_pdf_page_with_mode(
                 if is_black {
                     pbm_line[x / 8] |= 1 << (7 - (x % 8));
                     black_pixels += 1;
-                    if x < min_x { min_x = x; }
-                    if x > max_x { max_x = x; }
-                    if y < min_y { min_y = y; }
-                    if y > max_y { max_y = y; }
+                    if x < min_x {
+                        min_x = x;
+                    }
+                    if x > max_x {
+                        max_x = x;
+                    }
+                    if y < min_y {
+                        min_y = y;
+                    }
+                    if y > max_y {
+                        max_y = y;
+                    }
                 }
 
                 // Distribute error in reverse: 7/16 left, 3/16 down-right, 5/16 down, 1/16 down-left
                 err_curr[x_err - 1] += (error * 7 / 16) as i16;
                 err_next[x_err + 1] += (error * 3 / 16) as i16;
                 err_next[x_err] += (error * 5 / 16) as i16;
-                err_next[x_err - 1] += (error * 1 / 16) as i16;
+                err_next[x_err - 1] += (error / 16) as i16;
             }
         }
 
@@ -261,20 +285,45 @@ pub fn render_pdf_page_with_mode(
     if black_pixels > 0 {
         let bbox_w = max_x.saturating_sub(min_x) + 1;
         let bbox_h = max_y.saturating_sub(min_y) + 1;
-        println!("  [Raster Analysis] Page {}/{} rendered: {}x{} | Black pixels: {} ({:.2}% coverage) | BBox: [{}, {}] -> [{}, {}] ({}x{} px)", 
-            page_idx + 1, page_count, pbm.width, pbm.height, black_pixels, 
+        println!(
+            "  [Raster Analysis] Page {}/{} rendered: {}x{} | Black pixels: {} ({:.2}% coverage) | BBox: [{}, {}] -> [{}, {}] ({}x{} px)",
+            page_idx + 1,
+            page_count,
+            pbm.width,
+            pbm.height,
+            black_pixels,
             (black_pixels as f64) / ((pbm.width * pbm.height) as f64) * 100.0,
-            min_x, min_y, max_x, max_y, bbox_w, bbox_h);
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+            bbox_w,
+            bbox_h
+        );
     } else {
-        println!("  [Raster Analysis] Page {}/{} rendered: {}x{} | BLANK PAGE (0 black pixels)!", 
-            page_idx + 1, page_count, pbm.width, pbm.height);
+        println!(
+            "  [Raster Analysis] Page {}/{} rendered: {}x{} | BLANK PAGE (0 black pixels)!",
+            page_idx + 1,
+            page_count,
+            pbm.width,
+            pbm.height
+        );
     }
 
-    Ok((pbm, PageRenderTiming { raster_ms, pixel_ms }))
+    Ok((
+        pbm,
+        PageRenderTiming {
+            raster_ms,
+            pixel_ms,
+        },
+    ))
 }
 
 #[allow(dead_code)]
-pub fn render_pdf_file_to_pbm(pdf_path: &str, page_idx: u32) -> Result<(PbmImage, PageRenderTiming), Box<dyn Error>> {
+pub fn render_pdf_file_to_pbm(
+    pdf_path: &str,
+    page_idx: u32,
+) -> Result<(PbmImage, PageRenderTiming), Box<dyn Error>> {
     let doc = load_pdf_document(pdf_path)?;
     render_pdf_page(&doc, page_idx)
 }

@@ -12,7 +12,7 @@ pub struct PbmImage {
 
 impl PbmImage {
     pub fn new(width: usize, height: usize) -> Self {
-        let line_size = (width + 7) / 8;
+        let line_size = width.div_ceil(8);
         Self {
             width,
             height,
@@ -91,7 +91,7 @@ impl PbmImage {
 
         let width = dims[0];
         let height = dims[1];
-        let line_size = (width + 7) / 8;
+        let line_size = width.div_ceil(8);
         let mut data = vec![0u8; line_size * height];
         reader.read_exact(&mut data)?;
 
@@ -105,7 +105,10 @@ impl PbmImage {
 
     pub fn write_file<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let mut file = File::create(path)?;
-        let header = format!("P4\n# Created by CAPT-PoC\n{} {}\n", self.width, self.height);
+        let header = format!(
+            "P4\n# Created by CAPT-PoC\n{} {}\n",
+            self.width, self.height
+        );
         file.write_all(header.as_bytes())?;
         file.write_all(&self.data)?;
         file.flush()?;
@@ -114,7 +117,7 @@ impl PbmImage {
 
     pub fn write_bmp<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let mut file = File::create(path)?;
-        let row_bytes = (self.width + 31) / 32 * 4;
+        let row_bytes = self.width.div_ceil(32) * 4;
         let image_size = row_bytes * self.height;
         let file_size = 14 + 40 + 8 + image_size;
 
@@ -160,5 +163,68 @@ impl PbmImage {
         }
         file.flush()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_pbm_new_and_pixel_access() {
+        let mut img = PbmImage::new(16, 2);
+        assert_eq!(img.width, 16);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.line_size, 2);
+        assert_eq!(img.data.len(), 4);
+
+        // All initially 0 (white)
+        assert_eq!(img.data, vec![0, 0, 0, 0]);
+
+        // Set pixel (0, 0)
+        img.set_pixel(0, 0, true);
+        assert_eq!(img.line(0)[0], 0x80);
+
+        // Set pixel (7, 0)
+        img.set_pixel(7, 0, true);
+        assert_eq!(img.line(0)[0], 0x81);
+
+        // Set pixel (8, 0)
+        img.set_pixel(8, 0, true);
+        assert_eq!(img.line(0)[1], 0x80);
+
+        // Clear pixel (0, 0)
+        img.set_pixel(0, 0, false);
+        assert_eq!(img.line(0)[0], 0x01);
+
+        // Out of bounds should safely do nothing
+        img.set_pixel(100, 100, true);
+    }
+
+    #[test]
+    fn test_pbm_read_with_comments() {
+        let pbm_raw = b"P4\n# Comment 1\n# Comment 2\n16 2\n\x81\x80\x00\xFF";
+        let mut reader = BufReader::new(Cursor::new(pbm_raw));
+        let img = PbmImage::read(&mut reader).unwrap();
+
+        assert_eq!(img.width, 16);
+        assert_eq!(img.height, 2);
+        assert_eq!(img.line_size, 2);
+        assert_eq!(img.data, vec![0x81, 0x80, 0x00, 0xFF]);
+    }
+
+    #[test]
+    fn test_pbm_invalid_magic() {
+        let bad = b"P1\n16 2\n0 1";
+        let mut reader = BufReader::new(Cursor::new(bad));
+        assert!(PbmImage::read(&mut reader).is_err());
+    }
+
+    #[test]
+    fn test_pbm_truncated_data() {
+        let truncated = b"P4\n16 2\n\x81\x80"; // expected 4 data bytes, only 2
+        let mut reader = BufReader::new(Cursor::new(truncated));
+        assert!(PbmImage::read(&mut reader).is_err());
     }
 }
