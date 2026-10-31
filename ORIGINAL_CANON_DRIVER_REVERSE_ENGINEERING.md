@@ -137,3 +137,4 @@ flowchart TD
 | `Cap3fail.wav` | Transmission communication failure. |
 | `Cap3potb.wav` | Paper output delivery tray full. |
 | `Cap3chgp.wav` | Paper size mismatch detected. |
+

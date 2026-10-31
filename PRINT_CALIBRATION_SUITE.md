@@ -79,3 +79,4 @@ To ensure empirical accuracy without premature optical claims:
 3. Compute the Optical Spot Gain Ratio ($S_{\text{gain}}$):
    $$S_{\text{gain}} = \frac{\text{Measured Optical Black Area}}{\text{Theoretical Digital Pixel Area}}$$
 4. Record results in `HARDWARE_OBSERVATION_LOG.md` before claiming optical equivalence.
+

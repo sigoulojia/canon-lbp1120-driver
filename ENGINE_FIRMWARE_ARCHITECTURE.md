@@ -120,3 +120,4 @@ Pickup Solenoid SL1 Energized
 | **Exact Assembly Machine Code** | **UNKNOWN** | Etched into silicon mask ROM at semiconductor foundry; non-extractable via software. |
 | **Exact Interrupt Vector Addresses** | **INFERRED** | Inferred from Hitachi H8/300 standard vector table (`0x0000..0x003F`). |
 | **Internal Memory Scratchpad Map** | **INFERRED** | Inferred from H8/329 high-speed RAM layout (`0xFB80..0xFF7F`). |
+

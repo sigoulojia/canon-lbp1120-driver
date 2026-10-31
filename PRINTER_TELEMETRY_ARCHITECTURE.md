@@ -90,3 +90,4 @@ Byte 14    : shipped_pages (Sheets ejected to delivery tray)
 Byte 15    : start_pages (Pickups initiated)
 Byte 16..19: reserved padding
 ```
+

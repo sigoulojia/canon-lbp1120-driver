@@ -83,3 +83,4 @@ stateDiagram-v2
 * In the compressed SCoA stream, the final token must be `OP_EOP` (`0x42`).
 * If the total compressed byte stream has an odd length, a single null pad byte (`0x00`) must be appended to satisfy the 16-bit word alignment required by the ASIC memory bus.
 * `IC_END_PAGE` (`0xD0A2`) serves as the hardware handshake that closes the decompressor gate and signals the Engine Controller to fire the paper pick-up solenoid (`SL1`).
+

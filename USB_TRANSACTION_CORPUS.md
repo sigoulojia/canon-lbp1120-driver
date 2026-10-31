@@ -139,3 +139,4 @@ Offset  Type    Field        Description
   A0 E0 06 00 50 10
   [Opcode: 0xE0A0] [Size: 6] [basic: 0x50 (Offline=1, UnitFree=1)] [changed: 0x10]
   ```
+

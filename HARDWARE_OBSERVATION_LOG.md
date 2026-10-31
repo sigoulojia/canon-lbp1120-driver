@@ -60,3 +60,4 @@
 1. **Hardware Counter Fidelity:** Physical hardware printed sheet counter incremented reliably from `0` to `1` following physical fuser delivery transit.
 2. **Sensor Repeatability:** Tray Empty sensor `PS202` and Top Door switch `SW301` reflected immediately in `basic & 0x02` and `engine_raw & 0x4000`.
 3. **Sound Synchronization:** Authentic audio prompts triggered within 15 ms of registered telemetry state transitions.
+
