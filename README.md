@@ -144,3 +144,4 @@ cargo test
 
 This project is developed for educational, archival, and hardware preservation purposes under clean-room reverse-engineering principles to restore functionality to abandoned hardware on modern operating systems.
 All original Canon binary assets, drivers, and trademarks remain the property of Canon Inc.
+
