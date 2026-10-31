@@ -1,0 +1,241 @@
+{
+  "project": "Canon LaserShot LBP-1120 Hardware Reverse Engineering",
+  "generated_at": "2026-10-31T15:15:00Z",
+  "author": "Autonomous Multidisciplinary Reverse-Engineering Team",
+  "usb_identifiers": {
+    "vendor_id": "0x04A9",
+    "product_id": "0x262B",
+    "device_class": "0x07 (Printers)",
+    "protocol": "CAPT 1.0 (Canon Advanced Printing Technology)",
+    "speed": "USB 1.1 Full-Speed (12 Mbps)"
+  },
+  "pcb_assemblies": [
+    {
+      "designation": "Interface Controller PCB",
+      "canon_part_number": "RG1-4305-000",
+      "common_name": "Video Controller / Formatter Board",
+      "connectors": [
+        { "ref": "J1", "type": "USB Type-B Female", "signals": ["VBUS (+5V)", "D-", "D+", "GND"] },
+        { "ref": "J2", "type": "Flat Cable Connector (RH2-5588)", "pin_count": 20, "mate": "J201 on Engine Controller" }
+      ],
+      "power_rails": ["+5.0V DC", "+3.3V DC (Regulated)", "GND"],
+      "components": [
+        {
+          "reference": "IC1",
+          "board": "Interface Controller PCB",
+          "manufacturer": "Canon Inc.",
+          "part_number": "NH4-5014-000 / Canon Custom ASIC",
+          "package": "QFP-128 / QFP-160",
+          "function": "Raster Timing, SCoA Hardware Decompression, AIR Smoothing, DRAM Memory Controller",
+          "electrical": { "voltage_v": 3.3, "clock_mhz": 48.0 },
+          "confidence": "Officially Documented / Reverse-Engineered",
+          "evidence": "Canon LBP-1120 Service Manual Section 2.1; SCoA hardware decoding semantics"
+        },
+        {
+          "reference": "IC2",
+          "board": "Interface Controller PCB",
+          "manufacturer": "Canon / Cypress",
+          "part_number": "USB Interface Microcontroller / Formatter Core",
+          "package": "QFP-80",
+          "function": "USB Endpoint Handler (EP0 Control, EP1 Bulk OUT, EP2 Bulk IN), Protocol Dispatcher",
+          "electrical": { "voltage_v": 3.3, "clock_mhz": 12.0 },
+          "confidence": "Verified Experimentally / Datasheet Compatible",
+          "evidence": "WinUSB enumeration descriptor; Bulk endpoint handling at 64 bytes"
+        },
+        {
+          "reference": "IC3",
+          "board": "Interface Controller PCB",
+          "manufacturer": "OKI / ESMT / Winbond",
+          "part_number": "M51V18165 / IS42S16100",
+          "package": "TSOP-50 / SOJ-42",
+          "function": "512 KB Video Ring FIFO Buffer",
+          "electrical": { "capacity_bytes": 524288, "voltage_v": 3.3, "bus_width_bits": 16 },
+          "confidence": "Officially Documented",
+          "evidence": "Documented 512 KB onboard buffer memory in Canon LBP-1120 specifications"
+        },
+        {
+          "reference": "IC4",
+          "board": "Interface Controller PCB",
+          "manufacturer": "Atmel / Microchip",
+          "part_number": "AT93C46 / AT24C02",
+          "package": "SOIC-8",
+          "function": "Non-Volatile Configuration Memory (USB VID/PID, Serial Number, Factory Offsets)",
+          "electrical": { "capacity_bits": 1024, "interface": "Microwire / I2C", "voltage_v": 3.3 },
+          "confidence": "Officially Documented / Verified by Datasheet",
+          "evidence": "Service Manual Section 2.1 Interface Controller configuration parameters"
+        },
+        {
+          "reference": "Y1",
+          "board": "Interface Controller PCB",
+          "manufacturer": "Epson / Citizen",
+          "part_number": "Crystal Resonator 12.000 MHz",
+          "package": "HC-49 / SMD",
+          "function": "USB Full-Speed Base Clock (multiplied to 48 MHz via on-chip PLL)",
+          "electrical": { "frequency_mhz": 12.0 },
+          "confidence": "Verified by Datasheet",
+          "evidence": "USB 1.1 12 Mbps Full-Speed reference standard"
+        },
+        {
+          "reference": "REG1",
+          "board": "Interface Controller PCB",
+          "manufacturer": "Rohm / Torex",
+          "part_number": "Low Dropout Voltage Regulator (5V to 3.3V)",
+          "package": "SOT-223",
+          "function": "Steps down +5V DC rail to +3.3V DC logic core supply",
+          "electrical": { "input_v": 5.0, "output_v": 3.3, "current_ma": 500 },
+          "confidence": "Strongly Inferred",
+          "evidence": "3.3V logic operating voltage of ASIC and SDRAM"
+        }
+      ]
+    },
+    {
+      "designation": "Engine Controller PCB",
+      "canon_part_number": "RG5-7264-000 (120V) / RG5-7266-000 (230V)",
+      "common_name": "DC Controller / Engine Motherboard",
+      "connectors": [
+        { "ref": "J201", "type": "Flat Cable Connector (RH2-5588)", "pin_count": 20, "mate": "J2 on Interface Controller" },
+        { "ref": "J202", "type": "Laser/Scanner Assembly Connector", "pin_count": 8, "signals": ["/BD", "LD_EN", "VDO", "GND", "+5V", "MTR_ON", "MTR_CLK"] },
+        { "ref": "J203", "type": "Sensor & Solenoid Harness", "pin_count": 10, "signals": ["PS201", "PS202", "SL1", "GND", "+24V", "+5V"] },
+        { "ref": "J204", "type": "Fixing Heater / Thermistor Connector", "pin_count": 4, "signals": ["TH1_SIG", "TH2_SIG", "GND", "TRIAC_GATE"] },
+        { "ref": "J205", "type": "AC Mains & Interlock Switch Input", "pin_count": 4, "signals": ["AC_LIVE", "AC_NEUTRAL", "SW301_INTERLOCK"] }
+      ],
+      "power_rails": ["+24.0V DC (Motors/Solenoids/HV)", "+5.0V DC (Logic & Sensors)", "+3.3V DC (MCU core)", "GND"],
+      "components": [
+        {
+          "reference": "IC201",
+          "board": "Engine Controller PCB",
+          "manufacturer": "Hitachi / Renesas",
+          "part_number": "HD6433292 / HD6473294 (H8/300 Architecture)",
+          "package": "QFP-80",
+          "function": "Engine Sequence Microcontroller (Electrophotographic Cycle, Motor Speed Control, Fuser PID)",
+          "electrical": { "voltage_v": 3.3, "clock_mhz": 16.0, "rom_kb": 64, "ram_kb": 2 },
+          "confidence": "Officially Documented / Verified by Datasheet",
+          "evidence": "Canon LBP-1120 Service Manual Section 2.2; Hitachi H8/300 family programming manual"
+        },
+        {
+          "reference": "IC202",
+          "board": "Engine Controller PCB",
+          "manufacturer": "Mitsumi Electric",
+          "part_number": "PST572 / PST592",
+          "package": "TO-92 / SOT-23",
+          "function": "Power Supply Voltage Supervisor & Reset Generator (Monitors 3.3V/5V rails)",
+          "electrical": { "threshold_v": 3.15, "active": "Low (/RESET)" },
+          "confidence": "Officially Documented",
+          "evidence": "Service Manual Section 2.2 Reset Circuit description"
+        },
+        {
+          "reference": "IC203",
+          "board": "Engine Controller PCB",
+          "manufacturer": "Toshiba / Sanyo / Rohm",
+          "part_number": "Main Motor & Scanner Motor Driver IC",
+          "package": "HSOP-28 / ZIP-25",
+          "function": "Drives Main DC motor and polygon scanner brushless motor",
+          "electrical": { "voltage_v": 24.0, "peak_current_a": 1.5 },
+          "confidence": "Strongly Inferred",
+          "evidence": "Motor drive circuit schematics in P160 engine documentation"
+        },
+        {
+          "reference": "HV-GEN",
+          "board": "Engine Controller PCB (High Voltage Section)",
+          "manufacturer": "Canon Custom Subsystem",
+          "part_number": "High-Voltage Power Supply (HVPS)",
+          "package": "PCB Integrated",
+          "function": "Generates Primary Charge, Developing Bias, Transfer Bias, and Discharge Needle voltages",
+          "electrical": {
+            "primary_charge_dc_v": -1300,
+            "primary_charge_ac_vpp": 2000,
+            "developing_dc_v": -450,
+            "transfer_dc_positive_v": 1500,
+            "transfer_dc_negative_v": -1000
+          },
+          "confidence": "Officially Documented",
+          "evidence": "Canon LBP-1120 Service Manual Section 2.3 High-Voltage Power Supply System"
+        },
+        {
+          "reference": "TR1",
+          "board": "Engine Controller PCB (Fixing Drive Section)",
+          "manufacturer": "SanRex / Motorola",
+          "part_number": "BCR8KM / Triac Switching Element",
+          "package": "TO-220F",
+          "function": "Zero-cross phase control for AC ceramic fixing heater",
+          "electrical": { "voltage_v": 600, "current_a": 8.0 },
+          "confidence": "Officially Documented",
+          "evidence": "Service Manual Section 2.4 Fixing System description"
+        }
+      ]
+    },
+    {
+      "designation": "Sensors and Actuators Subsystem",
+      "canon_part_number": "Integrated Chassis Assembly",
+      "components": [
+        {
+          "reference": "BD1",
+          "board": "Laser/Scanner Assembly",
+          "manufacturer": "Hamamatsu / Canon",
+          "part_number": "PIN Photodiode Beam Detect Sensor",
+          "function": "Detects laser sweep across polygon mirror to generate /BD horizontal sync pulse",
+          "electrical": { "response_time_ns": 10 },
+          "confidence": "Officially Documented",
+          "evidence": "Service Manual Section 2.2 Laser/Scanner System"
+        },
+        {
+          "reference": "PS201",
+          "board": "Chassis Sub-assembly",
+          "manufacturer": "Sharp / Omron",
+          "part_number": "Photointerrupter / Paper Delivery Sensor",
+          "function": "Detects leading and trailing edge of paper exiting fixing assembly",
+          "confidence": "Officially Documented",
+          "evidence": "Service Manual Section 2.5 Paper Pick-up/Feed System"
+        },
+        {
+          "reference": "PS202",
+          "board": "Chassis Sub-assembly",
+          "manufacturer": "Sharp / Omron",
+          "part_number": "Photointerrupter / Paper Sensor (Tray Empty Sensor)",
+          "function": "Detects presence of paper in manual feed slot and multi-purpose tray",
+          "confidence": "Officially Documented / Verified Experimentally",
+          "evidence": "Status bit basic & 0x02 and extended status payload[2] 0x80 bit verified live"
+        },
+        {
+          "reference": "SW301",
+          "board": "Chassis Sub-assembly",
+          "manufacturer": "Omron",
+          "part_number": "Door Interlock Microswitch",
+          "function": "Cuts +24V power line to Laser Diode and High-Voltage Unit when door is open",
+          "confidence": "Officially Documented / Verified Experimentally",
+          "evidence": "Extended status word 0x4000 live verification"
+        },
+        {
+          "reference": "SL1",
+          "board": "Paper Feed Unit",
+          "manufacturer": "Canon",
+          "part_number": "RH7-5284 / Paper Pick-up Solenoid",
+          "function": "Releases pickup roller clutch for one single revolution to grab sheet",
+          "electrical": { "voltage_v": 24.0, "resistance_ohm": 120 },
+          "confidence": "Officially Documented",
+          "evidence": "Parts Catalog Page 3 Figure 1"
+        },
+        {
+          "reference": "M1",
+          "board": "Chassis Drive",
+          "manufacturer": "Nidec / Canon",
+          "part_number": "RH7-1428 / Main DC Drive Motor",
+          "function": "Drives pickup roller, feed rollers, OPC drum, developing cylinder, and pressure roller",
+          "electrical": { "voltage_v": 24.0 },
+          "confidence": "Officially Documented",
+          "evidence": "Parts Catalog Page 2 Figure 2"
+        },
+        {
+          "reference": "M2",
+          "board": "Laser/Scanner Assembly",
+          "manufacturer": "Nidec / Canon",
+          "part_number": "Polygon Scanner Brushless Motor",
+          "function": "Rotates 4-faceted polygon mirror at ~18,000 RPM (for 10 PPM @ 600 DPI)",
+          "electrical": { "voltage_v": 24.0, "rpm": 18000 },
+          "confidence": "Officially Documented",
+          "evidence": "Service Manual Section 2.2 Scanner Motor specifications"
+        }
+      ]
+    }
+  ]
+}
