@@ -1,8 +1,8 @@
 # CANON LASERSHOT LBP-1120 DRIVER SUITE — RELEASE NOTES
-## Version: v1.0.0-rc.3 (Release Candidate 3) — 64-bit Windows Edition
+## Version: v1.0.0-rc.4 (Release Candidate 4) — 64-bit Windows Edition
 
 **Release Date:** October 31, 2026  
-**Target Hardware:** Canon LaserShot LBP-1120 (`USB\VID_04A9&PID_262B`, Device Serial `0353S4cQ`)  
+**Target Hardware:** Canon LaserShot LBP-1120 (`USB\VID_04A9&PID_262B`, Device Serial `0353S4cQ` / `0353S4CQ`)  
 **Target OS Platform:** Windows 10 & 11 (64-bit x86_64)  
 **Distribution Channel:** GitHub Releases (Prerelease Candidate)
 
@@ -10,20 +10,32 @@
 
 ## 1. Release Highlights & Overview
 
-Release Candidate 3 (**v1.0.0-rc.3**) resolves the Windows Service installation failure encountered during RC2 testing on secondary Windows systems. It eliminates command-line quoting issues, avoids Service Control Manager deletion race conditions (`ERROR_SERVICE_MARKED_FOR_DELETE` 1072), introduces persistent automated installation diagnostics surviving installer rollback, and enhances GUI error reporting.
+Release Candidate 4 (**v1.0.0-rc.4**) addresses real-world printing execution on secondary Windows PCs where print jobs are submitted and marked as "Printed" / "Imprimé" by Windows, but no physical paper is output by the printer.
 
-### Key Enhancements in RC3
-- **Command-Line Argument Parsing Fix:** Resolved quoting discrepancies when registering `canon-lbp1120-service.exe` with `sc.exe`. The binary path and its `service-run` parameter are serialized using exact unquoted option key grammar (`binPath= "\"C:\Program Files\CanonLBP1120\canon-lbp1120-service.exe\" service-run"`), eliminating `ERROR_INVALID_PARAMETER` (87 / 1639).
-- **In-Place SCM Updates (Fix Error 1072):** Removed the `sc delete` $\rightarrow$ `sc create` anti-pattern. If `CanonLBP1120Service` is already present, the installer updates configuration in-place via `sc config`, preventing `ERROR_SERVICE_MARKED_FOR_DELETE` (1072) when open handles exist in management tools (`services.msc`, Task Manager).
-- **Automated Rollback-Resistant Diagnostics:** The installer automatically generates:
-  ```text
-  %TEMP%\CanonLBP1120_Install_Diagnostics.txt
-  ```
-  This report records OS version, CPU architecture, installation directory, binary integrity, TCP port 9100/9101 availability, SCM initial state, and complete stdout/stderr/exit codes for every command executed. Because `%TEMP%` is not rolled back, the report remains accessible on disk even if installation aborts.
-- **Enhanced GUI Error Reporting:** When a post-installation step fails, the installer reads `%TEMP%\CanonLBP1120_Install_Error.txt` and displays the exact Windows/SCM error and diagnostic path in the message dialog before triggering rollback.
-- **Audited Conflict Resolution:** Safely checks TCP ports 9100 and 9101. If and only if an orphaned background process belonging to this driver suite (`canon-lbp1120-service.exe` or `capt-poc.exe`) is holding the port, it terminates that specific PID, logs the action, and leaves all third-party processes untouched.
-- **Standalone Diagnostic Tooling:** Added `canon-lbp1120-service.exe diagnose-service` command for testing SCM permissions, querying existing service state, and checking port bindings without running Inno Setup.
-- **Hardware & Driver Preservation:** Continues to strictly preserve operational WinUSB bindings (`oem5.inf` / `libwdi`) without modification. SCoA compression and the printing pipeline remain unaltered.
+RC4 eliminates the observability blind spot in the background service, introduces dynamic multi-candidate USB device discovery, establishes comprehensive 7-stage end-to-end tracing, preserves rejected and failed print streams for analysis, and provides one-click diagnostic tools for target systems.
+
+### Key Enhancements in RC4
+- **7-Stage End-to-End Pipeline Tracing:**
+  Traces every print job through:
+  - Stage 1: Windows Print Spooler submission (driver & port binding)
+  - Stage 2: RAW TCP / Named Pipe socket connection acceptance (127.0.0.1:9100/9101 or Named Pipe)
+  - Stage 3: Service stream ingestion & magic byte analysis (PDF vs XPS/PCL/EMF)
+  - Stage 4: WinRT Direct2D raster conversion (600 DPI rendering, dimensions, pixel count)
+  - Stage 5: SCoA compression & CAPT 1.0 packet framing (video lines, alignment, headers)
+  - Stage 6: WinUSB device opening & ASIC telemetry registers
+  - Stage 7: USB bulk packet streaming & mechanical paper feed confirmation
+- **Multi-Candidate WinUSB Device Discovery:**
+  Dynamically evaluates multiple device interface GUIDs (`{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}` and `{a5dcbf10-6530-11d2-901f-00c04fb951ed}`), queries `HKLM\SYSTEM\CurrentControlSet\Control\DeviceClasses` dynamically, and transparently accommodates serial number casing discrepancies (`0353S4CQ` vs `0353S4cQ`).
+- **Persistent Per-Job Logging & Spool Preservation:**
+  - Each job is assigned a unique timestamped ID (e.g. `JOB-211800-NORM-P9100-0001`).
+  - Writes detailed logs to `C:\ProgramData\CanonLBP1120\jobs\<job_id>.log` and `service.log`.
+  - Non-PDF streams (e.g. raw XPS from incompatible drivers) are automatically preserved as `<job_id>_rejected_<fmt>.bin` with actionable error diagnosis.
+  - Failed raster jobs are preserved as `<job_id>_failed.pdf` instead of being silently deleted.
+- **Integrated Diagnostic Subcommand & Batch Script:**
+  - Added CLI command: `canon-lbp1120-service.exe trace-pipeline`
+  - Added one-click script `C:\Program Files\CanonLBP1120\CanonLBP1120_TracePipeline.bat`
+  - Added Start Menu shortcuts for "Run Print Pipeline Diagnostics", "View Print Pipeline Diagnostics Log", and "Open Print Jobs Directory".
+- **Preserved Core Engine:** SCoA compression, 9-mode halftoning algorithms, and the verified USB packet protocol remain untouched.
 
 ---
 
@@ -31,14 +43,15 @@ Release Candidate 3 (**v1.0.0-rc.3**) resolves the Windows Service installation 
 
 | File Name | Size | Purpose |
 | :--- | :--- | :--- |
-| **`CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe`** | ~2.5 MB | Full GUI Windows installer wizard |
-| **`canon-lbp1120-service.exe`** | ~920 KB | Standalone SCM service & CLI diagnostic binary |
+| **`CanonLBP1120_Setup_v1.0.0-rc.4_x64.exe`** | ~2.5 MB | Full GUI Windows installer wizard with diagnostic suite |
+| **`canon-lbp1120-service.exe`** | ~1.0 MB | Standalone SCM service, printer server & CLI diagnostic binary |
 | **`SHA256SUMS.txt`** | Text | Cryptographic SHA256 checksums |
-| **`RC2_SERVICE_INSTALLATION_ROOT_CAUSE_AUDIT.md`** | Markdown | Complete technical audit of the service installation pipeline |
+| **`PRINT_PIPELINE_INVESTIGATION_AND_DIAGNOSTICS.md`** | Markdown | Complete technical audit and forensic diagnostic documentation |
+| **`SERVICE_INSTALLATION_ROOT_CAUSE_AUDIT.md`** | Markdown | Technical audit of the service installation pipeline |
 
 To verify artifact integrity in PowerShell:
 ```powershell
-Get-FileHash -Path CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe -Algorithm SHA256
+Get-FileHash -Path CanonLBP1120_Setup_v1.0.0-rc.4_x64.exe -Algorithm SHA256
 ```
 
 ---
@@ -53,22 +66,19 @@ Get-FileHash -Path CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe -Algorithm SHA256
 
 ---
 
-## 4. Installation & Deployment Quick Start
+## 4. Target Machine Testing Protocol
 
-### Graphical Installation (Recommended)
-1. Download `CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe`.
-2. Double-click to launch. Accept the User Account Control (UAC) prompt.
-3. Follow the wizard steps to complete staging, WinUSB registration, queue setup, and service startup.
-4. Ensure the Canon LaserShot LBP-1120 is connected via USB and powered ON.
-5. Print a test page from Settings or Notepad.
-
-### Uninstallation
-- Run **Add/Remove Programs** $\rightarrow$ **Canon LaserShot LBP-1120 Driver Suite** $\rightarrow$ **Uninstall**.
-- Alternatively, right-click `CanonLBP1120_Uninstall.bat` as Administrator.
+1. Download and run **`CanonLBP1120_Setup_v1.0.0-rc.4_x64.exe`** as Administrator.
+2. Submit a print job from Notepad or Windows Settings to **`Canon LaserShot LBP-1120`**.
+3. If the document prints: The pipeline is fully verified on your hardware.
+4. If no paper feeds:
+   - Check `C:\ProgramData\CanonLBP1120\jobs\` for the generated job log.
+   - Run the Start Menu shortcut **Run Print Pipeline Diagnostics** (or `CanonLBP1120_TracePipeline.bat`).
+   - The diagnostic report will pinpoint the exact stage of the stall.
 
 ---
 
 ## 5. Prerelease Status & Notice
 
 > [!IMPORTANT]
-> This build is released as a **Release Candidate (RC3)** for independent verification on secondary Windows systems. Clean-machine and physical printer validation remain active and pending on external hardware.
+> This build is released as a **Release Candidate (RC4)** for diagnostic and operational verification on secondary Windows hardware. Clean-machine and physical printer validation remain active and pending on external hardware.

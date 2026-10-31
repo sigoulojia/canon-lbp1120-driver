@@ -17,13 +17,133 @@ pub const SERVICE_DISPLAY_NAME_STR: &str = "Canon LaserShot LBP-1120 Print Servi
 static mut SERVICE_STATUS_HANDLE: Option<SERVICE_STATUS_HANDLE> = None;
 pub static SERVICE_SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
 
-/// Returns the path to the service log file: `%ProgramData%\CanonLBP1120\service.log`
-pub fn get_service_log_path() -> PathBuf {
+/// Returns the root service directory: `%ProgramData%\CanonLBP1120`
+pub fn get_service_dir() -> PathBuf {
     let program_data = env::var("ProgramData").unwrap_or_else(|_| r"C:\ProgramData".to_string());
     let mut dir = PathBuf::from(program_data);
     dir.push("CanonLBP1120");
-    dir.push("service.log");
     dir
+}
+
+/// Returns the path to the service log file: `%ProgramData%\CanonLBP1120\service.log`
+pub fn get_service_log_path() -> PathBuf {
+    get_service_dir().join("service.log")
+}
+
+/// Returns the path to the per-job logs directory: `%ProgramData%\CanonLBP1120\jobs`
+pub fn get_jobs_dir() -> PathBuf {
+    get_service_dir().join("jobs")
+}
+
+/// Returns the path to the spool data directory: `%ProgramData%\CanonLBP1120\spool`
+pub fn get_spool_dir() -> PathBuf {
+    get_service_dir().join("spool")
+}
+
+/// Generates a globally unique, timestamped per-job identifier (e.g. `JOB-211800-P9100-0001`)
+pub fn generate_job_id(port: u16, mode_str: &str) -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let d = std::time::SystemTime::now();
+    let since = d.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = since.as_secs();
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    let prefix = if mode_str.to_lowercase().contains("photo") { "PHOTO" } else { "NORM" };
+    format!("JOB-{:02}{:02}{:02}-{}-P{}-{:04}", h, m, s, prefix, port, seq)
+}
+
+/// Persistent, multi-target job logger for end-to-end print pipeline observability.
+/// Logs are flushed immediately to both `%ProgramData%\CanonLBP1120\jobs\<job_id>.log`
+/// and `%ProgramData%\CanonLBP1120\service.log`.
+#[derive(Clone, Debug)]
+pub struct JobLogger {
+    pub job_id: String,
+    pub job_log_path: PathBuf,
+}
+
+impl JobLogger {
+    pub fn new(job_id: &str) -> Self {
+        let jobs_dir = get_jobs_dir();
+        let _ = create_dir_all(&jobs_dir);
+        let job_log_path = jobs_dir.join(format!("{}.log", job_id));
+        Self {
+            job_id: job_id.to_string(),
+            job_log_path,
+        }
+    }
+
+    pub fn log(&self, stage: &str, message: &str) {
+        let now = chrono_like_now();
+        let line = format!("[{}] [{}] [{}] {}\n", now, self.job_id, stage, message);
+        self.write_line(&line);
+        print!("{}", line);
+        let _ = std::io::stdout().flush();
+    }
+
+    pub fn log_error(&self, stage: &str, message: &str) {
+        let now = chrono_like_now();
+        let line = format!("[{}] [{}] [ERROR: {}] {}\n", now, self.job_id, stage, message);
+        self.write_line(&line);
+        eprint!("{}", line);
+        let _ = std::io::stderr().flush();
+    }
+
+    fn write_line(&self, text: &str) {
+        // 1. Write to job-specific log file
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&self.job_log_path) {
+            let _ = f.write_all(text.as_bytes());
+        }
+        // 2. Write to unified service log file
+        let svc_log = get_service_log_path();
+        if let Some(parent) = svc_log.parent() {
+            let _ = create_dir_all(parent);
+        }
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&svc_log) {
+            let _ = f.write_all(text.as_bytes());
+        }
+    }
+
+    pub fn log_summary(
+        &self,
+        stage1_submission: &str,
+        stage2_socket: &str,
+        stage3_ingest: &str,
+        stage4_pdf: &str,
+        stage5_scoa: &str,
+        stage6_usb: &str,
+        stage7_print: &str,
+        final_result: &str,
+    ) {
+        let summary = format!(
+            "\n======================================================================\n\
+             CANON LBP-1120 PRINT PIPELINE EXECUTION SUMMARY: {}\n\
+             ======================================================================\n\
+             Stage 1: Windows Print Spooler Submission    -> {}\n\
+             Stage 2: RAW TCP / Named Pipe Connection      -> {}\n\
+             Stage 3: Service Ingestion & Stream Analysis  -> {}\n\
+             Stage 4: PDF / Direct2D Raster Conversion     -> {}\n\
+             Stage 5: SCoA Compression & CAPT Framing      -> {}\n\
+             Stage 6: WinUSB Device Discovery & Interface  -> {}\n\
+             Stage 7: USB Transmission & Mechanical Feed   -> {}\n\
+             ----------------------------------------------------------------------\n\
+             FINAL RESULT: {}\n\
+             ======================================================================\n\n",
+            self.job_id,
+            stage1_submission,
+            stage2_socket,
+            stage3_ingest,
+            stage4_pdf,
+            stage5_scoa,
+            stage6_usb,
+            stage7_print,
+            final_result,
+        );
+        self.write_line(&summary);
+        print!("{}", summary);
+        let _ = std::io::stdout().flush();
+    }
 }
 
 /// Appends a timestamped log entry to `%ProgramData%\CanonLBP1120\service.log`.
@@ -906,6 +1026,212 @@ pub fn uninstall_windows_service() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Comprehensive end-to-end print pipeline diagnostic tracer (`capt-poc trace-pipeline`).
+/// Inspects print queues, RAW ports, SCM service, TCP sockets, WinUSB hardware status,
+/// and recent job execution logs, saving a full report to `%TEMP%\CanonLBP1120_Print_Trace.txt`.
+pub fn trace_print_pipeline() -> Result<(), Box<dyn std::error::Error>> {
+    let mut out = String::new();
+    out.push_str("======================================================================\n");
+    out.push_str("   CANON LASERSHOT LBP-1120 END-TO-END PRINT PIPELINE DIAGNOSTIC TRACE\n");
+    out.push_str("======================================================================\n\n");
+
+    let now = chrono_like_now();
+    out.push_str(&format!("Audit Timestamp : {}\n", now));
+
+    // 1. System Information
+    let os_ver = Command::new("cmd.exe")
+        .args(["/c", "ver"])
+        .creation_flags(0x08000000)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "Unknown Windows OS".to_string());
+    let arch = env::var("PROCESSOR_ARCHITECTURE").unwrap_or_else(|_| env::consts::ARCH.to_string());
+    let comp_name = env::var("COMPUTERNAME").unwrap_or_else(|_| "UNKNOWN".to_string());
+    let user_name = env::var("USERNAME").unwrap_or_else(|_| "UNKNOWN".to_string());
+    let is_elevated = Command::new("net")
+        .args(["session"])
+        .creation_flags(0x08000000)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    out.push_str(&format!("OS Version      : {}\n", os_ver));
+    out.push_str(&format!("Architecture    : {}\n", arch));
+    out.push_str(&format!("Computer / User : {} \\ {}\n", comp_name, user_name));
+    out.push_str(&format!("Elevation       : {}\n\n", if is_elevated { "Elevated (Administrator)" } else { "Standard User" }));
+
+    // 2. Stage 1: Windows Print Queues
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Stage 1: Windows Print Queues Audit]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let queue_cmd = "Get-Printer 'Canon LaserShot LBP-1120*' -ErrorAction SilentlyContinue | Select-Object Name, DriverName, PortName, Datatype, JobCount, PrinterStatus | Format-List";
+    let q_out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", queue_cmd])
+        .creation_flags(0x08000000)
+        .output();
+    let queue_text = match q_out {
+        Ok(res) => String::from_utf8_lossy(&res.stdout).trim().to_string(),
+        Err(e) => format!("Failed to query print queues: {}", e),
+    };
+    if queue_text.is_empty() {
+        out.push_str("CRITICAL: No Canon LaserShot LBP-1120 print queues found in Windows!\n");
+        out.push_str("Hint: Run 'capt-poc install' to register the Normal and Photo print queues.\n\n");
+    } else {
+        out.push_str(&queue_text);
+        out.push_str("\n");
+        if !queue_text.contains("Microsoft Print To PDF") && !queue_text.contains("PDF") {
+            out.push_str("WARNING: The print queue is NOT using 'Microsoft Print to PDF' driver!\n");
+            out.push_str("Drivers other than 'Microsoft Print to PDF' may output XPS/PCL/RAW data, which will be rejected by the LBP-1120 SCoA engine.\n\n");
+        } else {
+            out.push_str("Queue Driver Verified: 'Microsoft Print to PDF' is correctly bound.\n\n");
+        }
+    }
+
+    // 3. Stage 2: Windows Printer Ports
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Stage 2: Windows RAW Printer Ports Audit]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let port_cmd = "Get-PrinterPort 'CanonLBP1120*' -ErrorAction SilentlyContinue | Select-Object Name, Protocol, PrinterHostAddress, PortNumber | Format-List";
+    let p_out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", port_cmd])
+        .creation_flags(0x08000000)
+        .output();
+    let port_text = match p_out {
+        Ok(res) => String::from_utf8_lossy(&res.stdout).trim().to_string(),
+        Err(e) => format!("Failed to query printer ports: {}", e),
+    };
+    if port_text.is_empty() {
+        out.push_str("CRITICAL: Printer ports 'CanonLBP1120_Normal' / 'CanonLBP1120_Photo' missing!\n\n");
+    } else {
+        out.push_str(&port_text);
+        out.push_str("\n\n");
+    }
+
+    // 4. Windows SCM Service Status
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Windows SCM Service Status: CanonLBP1120Service]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let sc_query = Command::new("sc.exe")
+        .args(["query", SERVICE_NAME_STR])
+        .creation_flags(0x08000000)
+        .output();
+    let sc_text = match sc_query {
+        Ok(res) => String::from_utf8_lossy(&res.stdout).trim().to_string(),
+        Err(e) => format!("Failed to query service: {}", e),
+    };
+    out.push_str(&sc_text);
+    out.push_str("\n");
+    if sc_text.contains("RUNNING") || sc_text.contains(" 4 ") {
+        out.push_str("Service State: RUNNING (Operational)\n\n");
+    } else {
+        out.push_str("CRITICAL: Windows Service is NOT in RUNNING state!\n\n");
+    }
+
+    // 5. TCP Socket Listeners (Ports 9100 & 9101)
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[TCP Socket Listeners Audit: 127.0.0.1:9100 & 9101]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    use std::net::TcpStream;
+    let test_9100 = TcpStream::connect_timeout(&"127.0.0.1:9100".parse().unwrap(), Duration::from_millis(1000));
+    let test_9101 = TcpStream::connect_timeout(&"127.0.0.1:9101".parse().unwrap(), Duration::from_millis(1000));
+    out.push_str(&format!("Port 9100 (Normal Mode TCP) : {}\n", if test_9100.is_ok() { "LISTENING & ACCEPTING" } else { "NOT RESPONDING (Error)" }));
+    out.push_str(&format!("Port 9101 (Photo Mode TCP)  : {}\n\n", if test_9101.is_ok() { "LISTENING & ACCEPTING" } else { "NOT RESPONDING (Error)" }));
+
+    // 6. Stage 6: Physical WinUSB Device Communication
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Stage 6: Physical USB Hardware & WinUSB Driver Audit]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let pnp_cmd = "Get-PnpDevice -InstanceId 'USB\\VID_04A9&PID_262B*' -ErrorAction SilentlyContinue | Select-Object InstanceId, Status, Service, Class, FriendlyName | Format-List";
+    let pnp_out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", pnp_cmd])
+        .creation_flags(0x08000000)
+        .output();
+    let pnp_text = match pnp_out {
+        Ok(res) => String::from_utf8_lossy(&res.stdout).trim().to_string(),
+        Err(e) => format!("Failed to query PnP: {}", e),
+    };
+    out.push_str(&format!("PnP Device Manager Status:\n{}\n\n", if pnp_text.is_empty() { "No USB device matching VID 04A9 & PID 262B connected." } else { &pnp_text }));
+
+    out.push_str("Testing WinUSB Connection to Physical Printer...\n");
+    match crate::usb::UsbPrinter::find_and_open() {
+        Ok(printer) => {
+            out.push_str(&format!("WinUSB Open Status: SUCCESS! Device Path: {}\n", printer.path));
+            if let Ok(id) = printer.get_device_id() {
+                out.push_str(&format!("IEEE 1284 Device ID : {}\n", id));
+            }
+            if let Ok(port_st) = printer.get_port_status() {
+                out.push_str(&format!("Port Status Register: 0x{:02X} (PaperEmpty={}, Selected={}, NoError={})\n", port_st.raw, port_st.paper_empty, port_st.selected, port_st.no_error));
+            }
+            if let Ok(ext) = printer.query_extended_status() {
+                out.push_str(&format!("Extended Hardware Registers: Basic=0x{:02X}, Aux=0x{:02X}, Controller=0x{:02X}, Engine=0x{:04X}\n", ext.basic, ext.aux, ext.controller, ext.engine_raw));
+                out.push_str(&format!("Physical Sensors: DoorOpen={}, NoCartridge={}, PaperJam={}, NoPaper={}, UnitFree={}, Waiting={}\n", ext.door_open, ext.no_cartridge, ext.paper_jam, ext.no_paper, ext.unit_free, ext.waiting));
+                out.push_str(&format!("Hardware Counters: Started={}, Printing={}, Shipped={}, Printed={}\n\n", ext.start_pages, ext.printing_pages, ext.shipped_pages, ext.printed_pages));
+            }
+        }
+        Err(e) => {
+            out.push_str(&format!("WinUSB Open Status: FAILED!\nError Details: {}\n\n", e));
+        }
+    }
+
+    // 7. Recent Spool & Job Logs
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Recent Spool Files & Job Execution Logs]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let jobs_dir = get_jobs_dir();
+    out.push_str(&format!("Jobs Directory: {}\n", jobs_dir.display()));
+    if let Ok(entries) = std::fs::read_dir(&jobs_dir) {
+        let mut job_files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        job_files.sort_by(|a, b| b.cmp(a)); // newest first
+        if job_files.is_empty() {
+            out.push_str("No job log files found in directory.\n\n");
+        } else {
+            out.push_str(&format!("Found {} job log file(s). Most recent jobs:\n", job_files.len()));
+            for path in job_files.iter().take(5) {
+                out.push_str(&format!("  - {}\n", path.file_name().unwrap_or_default().to_string_lossy()));
+            }
+            out.push_str("\n--- Content of Latest Job Log ---\n");
+            if let Some(latest) = job_files.first() {
+                if let Ok(content) = std::fs::read_to_string(latest) {
+                    out.push_str(&content);
+                } else {
+                    out.push_str("(Unable to read latest job log)\n");
+                }
+            }
+            out.push_str("--- End of Latest Job Log ---\n\n");
+        }
+    } else {
+        out.push_str("Jobs directory not created yet (no print jobs received since service start).\n\n");
+    }
+
+    // 8. Recent Service Log Events
+    out.push_str("----------------------------------------------------------------------\n");
+    out.push_str("[Recent Service Log Events (service.log)]\n");
+    out.push_str("----------------------------------------------------------------------\n");
+    let svc_log = get_service_log_path();
+    if let Ok(content) = std::fs::read_to_string(&svc_log) {
+        let lines: Vec<&str> = content.lines().collect();
+        let start = lines.len().saturating_sub(30);
+        for line in &lines[start..] {
+            out.push_str(line);
+            out.push_str("\n");
+        }
+    } else {
+        out.push_str("Service log file not found or empty.\n");
+    }
+    out.push_str("\n======================================================================\n");
+    out.push_str("END OF PIPELINE DIAGNOSTIC TRACE\n");
+    out.push_str("======================================================================\n");
+
+    // Save report to %TEMP%\CanonLBP1120_Print_Trace.txt
+    let temp_file = env::temp_dir().join("CanonLBP1120_Print_Trace.txt");
+    let _ = std::fs::write(&temp_file, &out);
+
+    print!("{}", out);
+    let _ = std::io::stdout().flush();
+    println!("\nComplete diagnostic trace saved to: {}", temp_file.display());
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -989,5 +1315,39 @@ mod tests {
         // Ephemeral high port should be free and return None without taking action
         let action = cleanup_port_conflict_if_ours(54321);
         assert!(action.is_none());
+    }
+
+    #[test]
+    fn test_job_id_generation_and_logger() {
+        let job_id = generate_job_id(9100, "normal");
+        assert!(job_id.starts_with("JOB-"));
+        assert!(job_id.contains("-NORM-P9100-"));
+
+        let photo_id = generate_job_id(9101, "photo");
+        assert!(photo_id.contains("-PHOTO-P9101-"));
+
+        let logger = JobLogger::new(&job_id);
+        logger.log("Stage 2: Connection", "Testing connection log");
+        logger.log_error("Stage 3: Format", "Testing error log");
+        logger.log_summary(
+            "ACCEPTED",
+            "SUCCESS",
+            "SUCCESS",
+            "SUCCESS",
+            "SUCCESS",
+            "SUCCESS",
+            "SUCCESS",
+            "FINAL TEST SUCCESS",
+        );
+
+        assert!(logger.job_log_path.exists());
+        let content = std::fs::read_to_string(&logger.job_log_path).expect("read job log");
+        assert!(content.contains(&job_id));
+        assert!(content.contains("Testing connection log"));
+        assert!(content.contains("Testing error log"));
+        assert!(content.contains("FINAL TEST SUCCESS"));
+
+        // Clean up test job log file
+        let _ = std::fs::remove_file(&logger.job_log_path);
     }
 }

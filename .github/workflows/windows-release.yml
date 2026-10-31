@@ -90,6 +90,7 @@ jobs:
           Copy-Item "installer\CanonLBP1120_WinUSB.inf" "$dist\driver\CanonLBP1120_WinUSB.inf" -Force
           Copy-Item "installer\Uninstall-CanonLBP1120.ps1" "$dist\Uninstall-CanonLBP1120.ps1" -Force
           Copy-Item "installer\Install-CanonLBP1120.ps1" "$dist\Install-CanonLBP1120.ps1" -Force
+          Copy-Item "installer\CanonLBP1120_TracePipeline.bat" "$dist\CanonLBP1120_TracePipeline.bat" -Force
           Get-ChildItem -Path $dist -Recurse | Select-Object Name, Length
 
       - name: Compile Inno Setup Installer
@@ -144,6 +145,7 @@ jobs:
           Copy-Item "WINUSB_COMPATIBILITY_AND_SAFETY.md" -Destination "release-staging\" -Force
           Copy-Item "SERVICE_SECURITY_AUDIT.md" -Destination "release-staging\" -Force
           Copy-Item "SERVICE_INSTALLATION_ROOT_CAUSE_AUDIT.md" -Destination "release-staging\" -Force
+          Copy-Item "PRINT_PIPELINE_INVESTIGATION_AND_DIAGNOSTICS.md" -Destination "release-staging\" -Force
           Write-Host "Staged Release Artifacts:"
           Get-ChildItem -Path "release-staging" | Select-Object Name, Length
 

@@ -1,10 +1,10 @@
 ; ==============================================================================
 ; Inno Setup 6/7 Script for Canon LaserShot LBP-1120 Open Source Driver Suite
-; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe
+; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0-rc.4_x64.exe
 ; ==============================================================================
 
 #define MyAppName "Canon LaserShot LBP-1120 Driver Suite"
-#define MyAppVersion "1.0.0-rc.3"
+#define MyAppVersion "1.0.0-rc.4"
 #define MyAppPublisher "Autonomous Hardware Research Team"
 #define MyAppExeName "canon-lbp1120-service.exe"
 
@@ -17,7 +17,7 @@ DefaultDirName={commonpf64}\CanonLBP1120
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=.
-OutputBaseFilename=CanonLBP1120_Setup_v1.0.0-rc.3_x64
+OutputBaseFilename=CanonLBP1120_Setup_v1.0.0-rc.4_x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -40,14 +40,18 @@ Source: "Install-CanonLBP1120.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Uninstall-CanonLBP1120.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CanonLBP1120_Setup.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CanonLBP1120_Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CanonLBP1120_TracePipeline.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Printer Status Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "probe"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
+Name: "{group}\Run Print Pipeline Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "trace-pipeline"; IconFilename: "{sys}\shell32.dll"; IconIndex: 23
 Name: "{group}\Run Installation Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "diagnose-service"; IconFilename: "{sys}\shell32.dll"; IconIndex: 23
 Name: "{group}\Reset Printer State"; Filename: "{app}\{#MyAppExeName}"; Parameters: "reset"; IconFilename: "{sys}\shell32.dll"; IconIndex: 238
 Name: "{group}\Print 6-Zone Calibration Page"; Filename: "{app}\{#MyAppExeName}"; Parameters: "generate-calibration"; IconFilename: "{sys}\shell32.dll"; IconIndex: 16
+Name: "{group}\View Print Pipeline Diagnostics Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe %TEMP%\CanonLBP1120_Print_Trace.txt"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\View Installation Diagnostics Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe %TEMP%\CanonLBP1120_Install_Diagnostics.txt"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\View Service Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe C:\ProgramData\CanonLBP1120\service.log"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
+Name: "{group}\Open Print Jobs Directory"; Filename: "{cmd}"; Parameters: "/c explorer.exe C:\ProgramData\CanonLBP1120\jobs"; IconFilename: "{sys}\shell32.dll"; IconIndex: 4
 Name: "{group}\Uninstall Driver Suite"; Filename: "{uninstallexe}"
 
 [UninstallRun]

@@ -1,6 +1,7 @@
 #![allow(dead_code, clippy::upper_case_acronyms)]
 use std::ffi::c_void;
 use std::io;
+use std::os::windows::process::CommandExt;
 use std::ptr;
 
 type HANDLE = *mut c_void;
@@ -303,24 +304,66 @@ pub struct UsbPrinter {
 
 impl UsbPrinter {
     pub fn find_and_open() -> io::Result<Self> {
-        let candidates = [
-            r"\\?\USB#VID_04A9&PID_262B#0353S4cQ#{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}",
-            r"\\?\USB#VID_04A9&PID_262B#0353S4cQ#{a5dcbf10-6530-11d2-901f-00c04fb951ed}",
-        ];
+        Self::find_and_open_with_logger(None)
+    }
 
-        for path in &candidates {
-            if let Ok(dev) = Self::open(path) {
-                return Ok(dev);
+    pub fn find_and_open_with_logger(logger: Option<&crate::service::JobLogger>) -> io::Result<Self> {
+        let mut candidates = Vec::new();
+
+        // 1. Known hardware instance paths (handling both lowercase and uppercase serial representations)
+        candidates.push(r"\\?\USB#VID_04A9&PID_262B#0353S4cQ#{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}".to_string());
+        candidates.push(r"\\?\USB#VID_04A9&PID_262B#0353S4CQ#{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}".to_string());
+        candidates.push(r"\\?\USB#VID_04A9&PID_262B#0353S4cQ#{a5dcbf10-6530-11d2-901f-00c04fb951ed}".to_string());
+        candidates.push(r"\\?\USB#VID_04A9&PID_262B#0353S4CQ#{a5dcbf10-6530-11d2-901f-00c04fb951ed}".to_string());
+
+        // 2. Query Windows Registry DeviceClasses for our dedicated WinUSB GUID
+        if let Ok(output) = std::process::Command::new("reg")
+            .args(["query", r"HKLM\SYSTEM\CurrentControlSet\Control\DeviceClasses\{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}"])
+            .creation_flags(0x08000000)
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.contains("VID_04A9&PID_262B") {
+                    if let Some(sub) = line.split(r"DeviceClasses\{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}\").nth(1) {
+                        let trimmed = sub.trim().trim_end_matches('#');
+                        let clean_path = trimmed.replace("##?#", r"\\?\");
+                        if !candidates.contains(&clean_path) {
+                            candidates.push(clean_path);
+                        }
+                    }
+                }
             }
         }
 
-        // Try querying registry if explicit candidate paths fail
+        // 3. Query Windows Registry DeviceClasses for standard USB device GUID
+        if let Ok(output) = std::process::Command::new("reg")
+            .args(["query", r"HKLM\SYSTEM\CurrentControlSet\Control\DeviceClasses\{a5dcbf10-6530-11d2-901f-00c04fb951ed}"])
+            .creation_flags(0x08000000)
+            .output()
+        {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if line.contains("VID_04A9&PID_262B") {
+                    if let Some(sub) = line.split(r"DeviceClasses\{a5dcbf10-6530-11d2-901f-00c04fb951ed}\").nth(1) {
+                        let trimmed = sub.trim().trim_end_matches('#');
+                        let clean_path = trimmed.replace("##?#", r"\\?\");
+                        if !candidates.contains(&clean_path) {
+                            candidates.push(clean_path);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Query Registry Enum\USB for SymbolicName
         if let Ok(output) = std::process::Command::new("reg")
             .args([
                 "query",
                 r"HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_04A9&PID_262B",
                 "/s",
             ])
+            .creation_flags(0x08000000)
             .output()
         {
             let text = String::from_utf8_lossy(&output.stdout);
@@ -330,17 +373,64 @@ impl UsbPrinter {
                 {
                     let trimmed = val.trim();
                     let clean_path = trimmed.replace(r"\??\", r"\\?\");
-                    if let Ok(dev) = Self::open(&clean_path) {
-                        return Ok(dev);
+                    if !candidates.contains(&clean_path) {
+                        candidates.push(clean_path);
                     }
                 }
             }
         }
 
-        Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Canon LaserShot LBP-1120 (04A9:262B) not found or could not be opened with WinUSB",
-        ))
+        if let Some(log) = logger {
+            log.log("Stage 6: WinUSB Discovery", &format!("Evaluating {} device path candidate(s) for Canon LBP-1120 (04A9:262B)...", candidates.len()));
+        }
+
+        let mut errors = Vec::new();
+        for path in &candidates {
+            match Self::open(path) {
+                Ok(dev) => {
+                    if let Some(log) = logger {
+                        log.log("Stage 6: WinUSB Opened", &format!("Successfully opened printer device path: {}", path));
+                    }
+                    return Ok(dev);
+                }
+                Err(e) => {
+                    errors.push(format!("'{}': {}", path, e));
+                }
+            }
+        }
+
+        let err_summary = format!(
+            "Canon LaserShot LBP-1120 (04A9:262B) not found or could not be opened with WinUSB. Probe attempts:\n  {}",
+            errors.join("\n  ")
+        );
+        if let Some(log) = logger {
+            log.log_error("Stage 6: WinUSB Error", &err_summary);
+        }
+
+        Err(io::Error::new(io::ErrorKind::NotFound, err_summary))
+    }
+
+    pub fn query_interface_info(&self) -> io::Result<(UsbInterfaceDescriptor, Vec<WinUsbPipeInformation>)> {
+        let mut iface = UsbInterfaceDescriptor::default();
+        let res = unsafe {
+            WinUsb_QueryInterfaceSettings(self.winusb_handle, 0, &mut iface)
+        };
+        if res == 0 {
+            let err = unsafe { GetLastError() };
+            return Err(io::Error::other(format!("WinUsb_QueryInterfaceSettings failed (code {})", err)));
+        }
+
+        let mut pipes = Vec::new();
+        for i in 0..iface.num_endpoints {
+            let mut pipe = WinUsbPipeInformation::default();
+            let p_res = unsafe {
+                WinUsb_QueryPipe(self.winusb_handle, 0, i, &mut pipe)
+            };
+            if p_res != 0 {
+                pipes.push(pipe);
+            }
+        }
+        Ok((iface, pipes))
     }
 
     pub fn open(device_path: &str) -> io::Result<Self> {

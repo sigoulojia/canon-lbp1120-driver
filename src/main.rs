@@ -758,6 +758,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  capt-poc install-service                  - Register & start native SCM Windows Service");
         println!("  capt-poc uninstall-service                - Stop & unregister native SCM Windows Service");
         println!("  capt-poc diagnose-service                 - Audit system, ports, SCM status & generate diagnostic report");
+        println!("  capt-poc trace-pipeline                   - End-to-end diagnostic trace of queues, ports, WinUSB & print jobs");
         println!("  capt-poc service-run                      - Run under SCM (called by Windows Service Manager)");
         println!("  capt-poc spool-server                     - Run foreground dual-mode spool server (TCP & Pipes)");
         println!("  capt-poc service                          - Run background detached spool server");
@@ -802,6 +803,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "diagnose-service" => {
             service::diagnose_windows_service()?;
+        }
+        "trace-pipeline" => {
+            service::trace_print_pipeline()?;
         }
         "spool-server" => {
             spool::run_pipe_server(false)?;

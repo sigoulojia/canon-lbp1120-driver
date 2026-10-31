@@ -6,7 +6,6 @@ use crate::protocol::{
 use crate::scoa::ScoaEncoder;
 use crate::sound::{CanonSound, play_sound};
 use crate::usb::UsbPrinter;
-use std::env;
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
@@ -36,10 +35,32 @@ pub const PRINTER_NAME_NORMAL: &str = "Canon LaserShot LBP-1120";
 pub const PRINTER_NAME_PHOTO: &str = "Canon LaserShot LBP-1120 (Photo)";
 
 pub struct SpoolJob {
+    pub job_id: String,
     pub path: std::path::PathBuf,
     pub ingest_ms: u128,
     pub spool_bytes: usize,
     pub mode: HalftoneMode,
+}
+
+/// Identifies the format signature of an incoming spool stream.
+pub fn analyze_stream_format(header: &[u8]) -> (&'static str, &'static str) {
+    if header.len() >= 4 && &header[..4] == b"%PDF" {
+        ("PDF", "Valid Adobe PDF Document")
+    } else if header.windows(4).any(|w| w == b"%PDF") {
+        ("PDF", "Valid Adobe PDF Document (with leading BOM/header)")
+    } else if header.len() >= 4 && &header[..4] == b"PK\x03\x04" {
+        ("XPS", "Microsoft XML Paper Specification (XPS / OpenXPS ZIP container)")
+    } else if header.len() >= 4 && (header.starts_with(b"\x1b%-12345X") || header.starts_with(b"\x1bE")) {
+        ("PCL", "HP Printer Command Language (PCL / PJL stream)")
+    } else if header.len() >= 4 && header.starts_with(b"%!PS") {
+        ("PostScript", "Adobe PostScript stream")
+    } else if header.len() >= 4 && header.starts_with(b"\x01\x00\x00\x00") {
+        ("EMF", "Windows Enhanced Metafile (EMF spool record)")
+    } else if !header.is_empty() && header.iter().all(|&b| b.is_ascii_graphic() || b.is_ascii_whitespace()) {
+        ("Text", "Plain ASCII / UTF-8 Text stream")
+    } else {
+        ("Unknown", "Unrecognized binary stream")
+    }
 }
 
 #[allow(dead_code)]
@@ -54,56 +75,152 @@ pub fn run_print_job(
     spool_ingest_ms: Option<u128>,
     mode: HalftoneMode,
 ) -> Result<(), Box<dyn Error>> {
+    let job_id = crate::service::generate_job_id(0, &mode.to_string());
+    let logger = crate::service::JobLogger::new(&job_id);
+    run_print_job_with_logger(&job_id, pdf_path, spool_ingest_ms, mode, &logger)
+}
+
+pub fn run_print_job_with_logger(
+    job_id: &str,
+    pdf_path: &str,
+    spool_ingest_ms: Option<u128>,
+    mode: HalftoneMode,
+    logger: &crate::service::JobLogger,
+) -> Result<(), Box<dyn Error>> {
     let t_job_start = std::time::Instant::now();
-    println!("\n=======================================================");
-    println!("   CANON LBP-1120 SPOOL JOB PROCESSOR                ");
-    println!("=======================================================");
-    println!("Processing job: {} [Mode: {}]", pdf_path, mode);
+    logger.log(
+        "Job Start",
+        &format!("CANON LBP-1120 SPOOL JOB PROCESSOR [{}]: {} [Mode: {}]", job_id, pdf_path, mode),
+    );
 
     let metadata = std::fs::metadata(pdf_path)?;
     let spool_bytes = metadata.len() as usize;
     if spool_bytes == 0 {
-        return Err("Cannot print: Spool file is empty (0 bytes)".into());
+        let err_msg = "Cannot print: Spool file is empty (0 bytes)";
+        logger.log_error("Spool File", err_msg);
+        return Err(err_msg.into());
     }
 
     let ingest_ms = spool_ingest_ms.unwrap_or(0);
-    println!(
-        "[Stage 1: Windows Spooler Ingestion] Ingested {} bytes (Time: {} ms)",
-        spool_bytes, ingest_ms
+    logger.log(
+        "Stage 1: Windows Spooler Ingestion",
+        &format!("Ingested {} bytes in {} ms from Windows Print Spooler", spool_bytes, ingest_ms),
     );
 
-    let doc = load_pdf_document(pdf_path)?;
+    logger.log("Stage 4: PDF Conversion", &format!("Loading PDF document via WinRT: {}", pdf_path));
+    let doc = match load_pdf_document(pdf_path) {
+        Ok(d) => d,
+        Err(e) => {
+            let err_msg = format!("Failed to parse/load PDF document: {}", e);
+            logger.log_error("Stage 4: PDF Load Error", &err_msg);
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                "SUCCESS (Socket received)",
+                "SUCCESS (PDF format verified)",
+                &format!("FAILED: {}", e),
+                "SKIPPED",
+                "SKIPPED",
+                "SKIPPED",
+                &format!("STOPPED AT STAGE 4: WinRT PDF parsing failed: {}", e),
+            );
+            return Err(err_msg.into());
+        }
+    };
+
     let page_count = doc.PageCount()?;
-    println!("Document contains {} page(s).", page_count);
+    logger.log("Stage 4: PDF Loaded", &format!("Document contains {} page(s).", page_count));
 
     if page_count == 0 {
-        return Err("Cannot print: Document contains zero pages".into());
+        let err_msg = "Cannot print: Document contains zero pages";
+        logger.log_error("Stage 4: Empty Document", err_msg);
+        return Err(err_msg.into());
     }
 
     let t_hw_init = std::time::Instant::now();
-    print!("Connecting to physical printer via WinUSB... ");
-    let printer = UsbPrinter::find_and_open()?;
-    println!("CONNECTED!");
+    logger.log("Stage 6: WinUSB Connect", "Connecting to physical printer via WinUSB...");
+    let printer = match UsbPrinter::find_and_open_with_logger(Some(logger)) {
+        Ok(p) => p,
+        Err(e) => {
+            let err_msg = format!("Physical printer (04A9:262B) could not be opened via WinUSB: {}", e);
+            logger.log_error("Stage 6: Device Error", &err_msg);
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                "SUCCESS (Socket received)",
+                "SUCCESS (PDF format verified)",
+                &format!("SUCCESS ({} page(s) parsed)", page_count),
+                "SKIPPED",
+                &format!("FAILED: {}", e),
+                "SKIPPED",
+                &format!("STOPPED AT STAGE 6: WinUSB device connection failed: {}", e),
+            );
+            return Err(err_msg.into());
+        }
+    };
+
+    logger.log("Stage 6: WinUSB Connected", &format!("Connected to physical device: {}", printer.path));
     let _ = printer.reset_pipes();
 
+    if let Ok((iface, pipes)) = printer.query_interface_info() {
+        let pipes_desc = pipes
+            .iter()
+            .map(|p| format!("Pipe 0x{:02X} (Type={}, MaxSize={})", p.pipe_id, p.pipe_type, p.maximum_packet_size))
+            .collect::<Vec<_>>()
+            .join(", ");
+        logger.log(
+            "Stage 6: USB Descriptors",
+            &format!(
+                "Interface 0 (Class=0x{:02X}, SubClass=0x{:02X}, Protocol=0x{:02X}, Endpoints={}): {}",
+                iface.interface_class, iface.interface_sub_class, iface.interface_protocol, iface.num_endpoints, pipes_desc
+            ),
+        );
+    }
+
     // Check hardware status
-    println!("Checking hardware status...");
+    logger.log("Stage 6: Hardware Status", "Querying extended status from printer ASIC...");
     let status = match printer.query_extended_status() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!(
-                "Notice: Initial status query returned ({}), resetting pipes...",
-                e
+            logger.log_error(
+                "Stage 6: Status Query",
+                &format!("Initial status query returned ({}), resetting pipes...", e),
             );
             printer.full_recovery();
             match printer.query_extended_status() {
                 Ok(s2) => s2,
                 Err(e2) => {
-                    return Err(format!("Hardware status query failed (if printer locked, please power cycle 5s): {}", e2).into());
+                    let err_msg = format!("Hardware status query failed (if printer locked, power cycle 5s): {}", e2);
+                    logger.log_error("Stage 6: Hardware Error", &err_msg);
+                    logger.log_summary(
+                        "ACCEPTED BY WINDOWS",
+                        "SUCCESS (Socket received)",
+                        "SUCCESS (PDF format verified)",
+                        &format!("SUCCESS ({} page(s) parsed)", page_count),
+                        "SKIPPED",
+                        &format!("FAILED: Status query failed ({})", e2),
+                        "SKIPPED",
+                        &format!("STOPPED AT STAGE 6: Status query failed: {}", e2),
+                    );
+                    return Err(err_msg.into());
                 }
             }
         }
     };
+
+    logger.log(
+        "Stage 6: Hardware Status",
+        &format!(
+            "Basic: 0x{:02X}, Aux: 0x{:02X}, Controller: 0x{:02X}, Engine: 0x{:04X} | Sensors: DoorOpen={}, NoCartridge={}, PaperJam={}, NoPaper={}, UnitFree={}, Waiting={}",
+            status.basic, status.aux, status.controller, status.engine_raw,
+            status.door_open, status.no_cartridge, status.paper_jam, status.no_paper, status.unit_free, status.waiting
+        ),
+    );
+    logger.log(
+        "Stage 6: Hardware Counters",
+        &format!(
+            "Started={}, Printing={}, Shipped={}, Printed={}",
+            status.start_pages, status.printing_pages, status.shipped_pages, status.printed_pages
+        ),
+    );
 
     // Clean up any transient error or unread data before starting job
     let _ = printer.clear_error();
@@ -140,12 +257,36 @@ pub fn run_print_job(
         }
         if !closed {
             play_sound(CanonSound::Error);
-            return Err("Cannot print: Printer door/cover is open!".into());
+            let err_msg = "Cannot print: Printer door/cover is open!";
+            logger.log_error("Stage 6: Sensory Error", err_msg);
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                "SUCCESS (Ingested)",
+                "SUCCESS (PDF format)",
+                &format!("SUCCESS ({} page(s))", page_count),
+                "SKIPPED",
+                "FAILED (Printer door/cover open)",
+                "SKIPPED",
+                "STOPPED AT STAGE 6: Printer door/cover is open.",
+            );
+            return Err(err_msg.into());
         }
     }
     if status.no_cartridge {
         play_sound(CanonSound::NoCartridge);
-        return Err("Cannot print: Toner cartridge is missing!".into());
+        let err_msg = "Cannot print: Toner cartridge is missing!";
+        logger.log_error("Stage 6: Sensory Error", err_msg);
+        logger.log_summary(
+            "ACCEPTED BY WINDOWS",
+            "SUCCESS (Ingested)",
+            "SUCCESS (PDF format)",
+            &format!("SUCCESS ({} page(s))", page_count),
+            "SKIPPED",
+            "FAILED (Toner cartridge missing)",
+            "SKIPPED",
+            "STOPPED AT STAGE 6: Toner cartridge is missing.",
+        );
+        return Err(err_msg.into());
     }
     if status.paper_jam {
         play_sound(CanonSound::PaperJam);
@@ -165,7 +306,19 @@ pub fn run_print_job(
         }
         if !cleared {
             play_sound(CanonSound::Error);
-            return Err("Cannot print: Paper jam detected in printer path!".into());
+            let err_msg = "Cannot print: Paper jam detected in printer path!";
+            logger.log_error("Stage 6: Sensory Error", err_msg);
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                "SUCCESS (Ingested)",
+                "SUCCESS (PDF format)",
+                &format!("SUCCESS ({} page(s))", page_count),
+                "SKIPPED",
+                "FAILED (Paper jam in path)",
+                "SKIPPED",
+                "STOPPED AT STAGE 6: Paper jam detected in printer path.",
+            );
+            return Err(err_msg.into());
         }
     }
     let is_paper_empty = status.no_paper || (status.basic & 0x02) != 0;
@@ -202,7 +355,19 @@ pub fn run_print_job(
             }
         }
         if !loaded {
-            return Err("Timed out waiting for paper in tray".into());
+            let err_msg = "Timed out waiting for paper in tray";
+            logger.log_error("Stage 6: Sensory Error", err_msg);
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                "SUCCESS (Ingested)",
+                "SUCCESS (PDF format)",
+                &format!("SUCCESS ({} page(s))", page_count),
+                "SKIPPED",
+                "FAILED (Paper tray empty)",
+                "SKIPPED",
+                "STOPPED AT STAGE 6: Timed out waiting for paper in tray.",
+            );
+            return Err(err_msg.into());
         }
     }
 
@@ -774,6 +939,16 @@ pub fn run_print_job(
         "\n>>> [PRINT SUCCESS] All {} page(s) successfully imaged, fed, and physically delivered to output tray. <<<",
         page_count
     );
+    logger.log_summary(
+        "ACCEPTED BY WINDOWS",
+        &format!("SUCCESS (TCP/Pipe, {} bytes in {} ms)", spool_bytes, ingest_ms),
+        "SUCCESS (Valid Adobe PDF Document verified)",
+        &format!("SUCCESS ({} page(s) rendered @ 600 DPI)", page_count),
+        &format!("SUCCESS (Compressed to {} bytes, {:.2}% ratio)", total_compressed_bytes, (total_compressed_bytes as f64) / (total_uncompressed_bytes.max(1) as f64) * 100.0),
+        &format!("SUCCESS (Device connected: {})", printer.path),
+        &format!("SUCCESS (All {} page(s) delivered to tray)", page_count),
+        &format!("SUCCESS: Physical print cycle completed and verified by hardware counters (All {} page(s) delivered).", page_count),
+    );
     play_sound(CanonSound::PrintDone);
     Ok(())
 }
@@ -785,7 +960,8 @@ fn listen_on_pipe(
     silent: bool,
 ) {
     let pipe_wide: Vec<u16> = pipe_name.encode_utf16().chain(std::iter::once(0)).collect();
-    let temp_dir = env::temp_dir();
+    let spool_dir = crate::service::get_spool_dir();
+    let _ = std::fs::create_dir_all(&spool_dir);
 
     // Configure open DACL so all callers (including spoolsv running as SYSTEM/service) have write access
     let mut sa = SECURITY_ATTRIBUTES::default();
@@ -829,6 +1005,7 @@ fn listen_on_pipe(
 
     if h_pipe == INVALID_HANDLE_VALUE {
         let err = unsafe { GetLastError() };
+        crate::service::log_service_event(&format!("Fatal: CreateNamedPipeW failed for '{}' (error {}).", pipe_name, err.0));
         if !silent {
             eprintln!(
                 "Fatal: CreateNamedPipeW failed for '{}' (error {}).",
@@ -850,41 +1027,26 @@ fn listen_on_pipe(
                 unsafe { ReadFile(h_pipe, Some(&mut buf), Some(&mut first_bytes_read), None) };
 
             if first_res.is_err() || first_bytes_read == 0 {
-                if !silent {
-                    println!(
-                        "\n[Spool Monitor - {}] Spooler connected but sent 0 bytes. Connection closed.",
-                        mode
-                    );
-                }
                 unsafe {
                     let _ = DisconnectNamedPipe(h_pipe);
                 }
                 continue;
             }
 
+            let job_id = crate::service::generate_job_id(0, &mode.to_string());
+            let logger = crate::service::JobLogger::new(&job_id);
+
             let t_ingest_start = std::time::Instant::now();
-            if !silent {
-                println!(
-                    "\n>>> Print stream incoming on '{}' [{}]! Ingesting data...",
-                    pipe_name, mode
-                );
-            }
+            logger.log(
+                "Stage 2: Connection",
+                &format!("Incoming print stream connection accepted on Named Pipe '{}' [{}]", pipe_name, mode),
+            );
 
-            static JOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            let seq = JOB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0);
-            let pid = std::process::id();
-            let job_path = temp_dir.join(format!("lbp1120_job_{}_{}_{}.pdf", pid, ts, seq));
-
-            let mut file = match File::create(&job_path) {
+            let raw_job_path = spool_dir.join(format!("{}_spool.bin", job_id));
+            let mut file = match File::create(&raw_job_path) {
                 Ok(f) => f,
                 Err(e) => {
-                    if !silent {
-                        eprintln!("Failed to create temp spool file: {}", e);
-                    }
+                    logger.log_error("Spool Creation", &format!("Failed to create spool file: {}", e));
                     unsafe {
                         let _ = DisconnectNamedPipe(h_pipe);
                     }
@@ -894,9 +1056,7 @@ fn listen_on_pipe(
 
             let mut write_err = false;
             if let Err(e) = file.write_all(&buf[..first_bytes_read as usize]) {
-                if !silent {
-                    eprintln!("Failed writing to temp spool file: {}", e);
-                }
+                logger.log_error("Spool Write", &format!("Failed writing initial buffer: {}", e));
                 write_err = true;
             }
             let mut total_bytes = first_bytes_read as usize;
@@ -914,24 +1074,18 @@ fn listen_on_pipe(
                 total_bytes += bytes_read as usize;
                 if total_bytes > MAX_SPOOL_BYTES {
                     payload_oversized = true;
-                    if !silent {
-                        eprintln!("[Spool Monitor] Rejected oversized pipe payload (exceeded 100 MB ceiling)");
-                    }
+                    logger.log_error("Spool Limit", "Rejected oversized pipe payload (exceeded 100 MB ceiling)");
                     break;
                 }
 
                 if !write_err && let Err(e) = file.write_all(&buf[..bytes_read as usize]) {
-                    if !silent {
-                        eprintln!("Failed writing to temp spool file: {}", e);
-                    }
+                    logger.log_error("Spool Write", &format!("Failed writing buffer chunk: {}", e));
                     write_err = true;
                 }
             }
 
             if let Err(e) = file.flush() {
-                if !silent {
-                    eprintln!("Failed flushing temp spool file: {}", e);
-                }
+                logger.log_error("Spool Flush", &format!("Failed flushing spool file: {}", e));
                 write_err = true;
             }
             drop(file);
@@ -941,52 +1095,80 @@ fn listen_on_pipe(
             }
 
             if write_err || payload_oversized {
-                let _ = std::fs::remove_file(&job_path);
+                let _ = std::fs::remove_file(&raw_job_path);
                 continue;
             }
 
             let ingest_ms = t_ingest_start.elapsed().as_millis();
-            if !silent {
-                println!(
-                    "Ingested {} bytes in {} ms [{}]",
-                    total_bytes, ingest_ms, mode
-                );
-            }
+            logger.log(
+                "Stage 3: Spool Ingestion",
+                &format!("Ingested {} bytes in {} ms on '{}' [{}]", total_bytes, ingest_ms, pipe_name, mode),
+            );
 
             if total_bytes < 32 {
-                let _ = std::fs::remove_file(&job_path);
+                logger.log_error("Stage 3: Tiny Stream", &format!("Rejected stream: size {} bytes is under 32 byte minimum threshold.", total_bytes));
+                let _ = std::fs::remove_file(&raw_job_path);
                 clear_stuck_windows_jobs();
                 continue;
             }
 
-            if !is_pdf_file(&job_path) {
-                if !silent {
-                    let mut preview = [0u8; 16];
-                    let preview_len = if let Ok(mut f) = File::open(&job_path) {
-                        use std::io::Read;
-                        f.read(&mut preview).unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    eprintln!(
-                        "[Spool Monitor] Rejected non-PDF stream on '{}' ({} bytes, magic: {:02X?}). Required format is PDF from 'Microsoft Print to PDF' driver.",
-                        pipe_name,
-                        total_bytes,
-                        &preview[..preview_len]
-                    );
+            let mut preview = [0u8; 64];
+            let preview_len = if let Ok(mut f) = File::open(&raw_job_path) {
+                use std::io::Read;
+                f.read(&mut preview).unwrap_or(0)
+            } else {
+                0
+            };
+
+            let (fmt_name, fmt_desc) = analyze_stream_format(&preview[..preview_len]);
+            let hex_preview = preview[..preview_len.min(32)].iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+            let ascii_preview = String::from_utf8_lossy(&preview[..preview_len.min(64)]).replace("\r", " ").replace("\n", " ");
+
+            logger.log(
+                "Stage 3: Stream Header",
+                &format!("Header (first {}B): Hex: [{}], ASCII: \"{}\"", preview_len.min(32), hex_preview, ascii_preview.trim()),
+            );
+
+            if fmt_name == "PDF" {
+                let pdf_path = spool_dir.join(format!("{}.pdf", job_id));
+                let _ = std::fs::rename(&raw_job_path, &pdf_path);
+                logger.log("Stage 3: Format Verified", &format!("Stream signature: Valid PDF ({})", fmt_desc));
+                logger.log("Stage 3: Enqueued", &format!("Spool file enqueued for worker: {}", pdf_path.display()));
+
+                if let Err(e) = tx.send(SpoolJob {
+                    job_id,
+                    path: pdf_path,
+                    ingest_ms,
+                    spool_bytes: total_bytes,
+                    mode,
+                }) {
+                    logger.log_error("Queue Enqueue", &format!("Failed to enqueue job: {}", e));
                 }
-                let _ = std::fs::remove_file(&job_path);
+            } else {
+                let rejected_path = spool_dir.join(format!("{}_rejected_{}.bin", job_id, fmt_name.to_lowercase()));
+                let _ = std::fs::rename(&raw_job_path, &rejected_path);
+                let error_msg = format!(
+                    "Rejected non-PDF stream ({} bytes). Detected format: {} ({}). Saved stream to: {}",
+                    total_bytes, fmt_name, fmt_desc, rejected_path.display()
+                );
+                logger.log_error("Stage 3: Stream Format Rejected", &error_msg);
+                logger.log_error("Stage 3: Diagnosis", &format!(
+                    "CRITICAL NOTE: Windows Print Spooler marked this job as 'Printed' because all bytes were sent to pipe '{}'. \
+                    However, the print queue sent '{}' instead of PDF. The Canon LBP-1120 driver requires PDF stream from 'Microsoft Print to PDF'. \
+                    Check printer queue driver configuration in Windows Settings.",
+                    pipe_name, fmt_name
+                ));
+                logger.log_summary(
+                    "ACCEPTED BY WINDOWS",
+                    &format!("SUCCESS (Named Pipe '{}')", pipe_name),
+                    &format!("FAILED: Stream format is {} (not PDF)", fmt_name),
+                    "SKIPPED (Invalid format)",
+                    "SKIPPED (Invalid format)",
+                    "SKIPPED (Invalid format)",
+                    "SKIPPED (Invalid format)",
+                    &format!("STOPPED AT STAGE 3: Unsupported format '{}' received from print queue.", fmt_name),
+                );
                 clear_stuck_windows_jobs();
-                continue;
-            }
-
-            if let Err(e) = tx.send(SpoolJob {
-                path: job_path,
-                ingest_ms,
-                spool_bytes: total_bytes,
-                mode,
-            }) {
-                eprintln!("[Spool Monitor] Failed to enqueue print job: {}", e);
             }
         } else {
             sleep(Duration::from_millis(50));
@@ -1006,12 +1188,14 @@ fn listen_on_tcp(
     let addr = format!("127.0.0.1:{}", port);
     let listener = match TcpListener::bind(&addr) {
         Ok(l) => {
+            crate::service::log_service_event(&format!("[TCP Server] Listening on {} [{}]", addr, mode));
             if !silent {
                 println!("[TCP Server] Listening on {} [{}]", addr, mode);
             }
             l
         }
         Err(e) => {
+            crate::service::log_service_event(&format!("[TCP Server] Fatal: Failed to bind TCP listener on {} ({}).", addr, e));
             if !silent {
                 eprintln!("[TCP Server] Fatal: Failed to bind TCP listener on {} ({}).", addr, e);
             }
@@ -1019,12 +1203,14 @@ fn listen_on_tcp(
         }
     };
 
-    let temp_dir = env::temp_dir();
+    let spool_dir = crate::service::get_spool_dir();
+    let _ = std::fs::create_dir_all(&spool_dir);
 
     for stream_res in listener.incoming() {
         let mut stream = match stream_res {
             Ok(s) => s,
             Err(e) => {
+                crate::service::log_service_event(&format!("[TCP Server] Error accepting connection: {}", e));
                 if !silent {
                     eprintln!("[TCP Server] Error accepting connection: {}", e);
                 }
@@ -1044,38 +1230,27 @@ fn listen_on_tcp(
             continue;
         }
 
+        let job_id = crate::service::generate_job_id(port, &mode.to_string());
+        let logger = crate::service::JobLogger::new(&job_id);
+
         let t_ingest_start = std::time::Instant::now();
-        if !silent {
-            println!(
-                "\n>>> Print stream incoming on TCP port {} [{}]! Ingesting data...",
-                port, mode
-            );
-        }
+        logger.log(
+            "Stage 2: Connection",
+            &format!("Incoming print stream connection accepted on TCP port {} [{}]", port, mode),
+        );
 
-        static JOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-        let seq = JOB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let pid = std::process::id();
-        let job_path = temp_dir.join(format!("lbp1120_tcp_job_{}_{}_{}.pdf", pid, ts, seq));
-
-        let mut file = match File::create(&job_path) {
+        let raw_job_path = spool_dir.join(format!("{}_spool.bin", job_id));
+        let mut file = match File::create(&raw_job_path) {
             Ok(f) => f,
             Err(e) => {
-                if !silent {
-                    eprintln!("Failed to create temp spool file: {}", e);
-                }
+                logger.log_error("Spool Creation", &format!("Failed to create spool file: {}", e));
                 continue;
             }
         };
 
         let mut write_err = false;
         if let Err(e) = file.write_all(&buf[..first_bytes_read]) {
-            if !silent {
-                eprintln!("Failed writing to temp spool file: {}", e);
-            }
+            logger.log_error("Spool Write", &format!("Failed writing initial buffer: {}", e));
             write_err = true;
         }
         let mut total_bytes = first_bytes_read;
@@ -1089,16 +1264,12 @@ fn listen_on_tcp(
                     total_bytes += n;
                     if total_bytes > MAX_SPOOL_BYTES {
                         payload_oversized = true;
-                        if !silent {
-                            eprintln!("[Spool Monitor] Rejected oversized TCP payload (exceeded 100 MB ceiling)");
-                        }
+                        logger.log_error("Spool Limit", "Rejected oversized TCP payload (exceeded 100 MB ceiling)");
                         break;
                     }
                     if !write_err {
                         if let Err(e) = file.write_all(&buf[..n]) {
-                            if !silent {
-                                eprintln!("Failed writing to temp spool file: {}", e);
-                            }
+                            logger.log_error("Spool Write", &format!("Failed writing buffer chunk: {}", e));
                             write_err = true;
                         }
                     }
@@ -1108,60 +1279,87 @@ fn listen_on_tcp(
         }
 
         if let Err(e) = file.flush() {
-            if !silent {
-                eprintln!("Failed flushing temp spool file: {}", e);
-            }
+            logger.log_error("Spool Flush", &format!("Failed flushing spool file: {}", e));
             write_err = true;
         }
         drop(file);
 
         if write_err || payload_oversized {
-            let _ = std::fs::remove_file(&job_path);
+            let _ = std::fs::remove_file(&raw_job_path);
             continue;
         }
 
         let ingest_ms = t_ingest_start.elapsed().as_millis();
-        if !silent {
-            println!(
-                "Ingested {} bytes in {} ms on TCP {} [{}]",
-                total_bytes, ingest_ms, port, mode
-            );
-        }
+        logger.log(
+            "Stage 3: Spool Ingestion",
+            &format!("Ingested {} bytes in {} ms on TCP {} [{}]", total_bytes, ingest_ms, port, mode),
+        );
 
         if total_bytes < 32 {
-            let _ = std::fs::remove_file(&job_path);
+            logger.log_error("Stage 3: Tiny Stream", &format!("Rejected stream: size {} bytes is under 32 byte minimum threshold.", total_bytes));
+            let _ = std::fs::remove_file(&raw_job_path);
             clear_stuck_windows_jobs();
             continue;
         }
 
-        if !is_pdf_file(&job_path) {
-            if !silent {
-                let mut preview = [0u8; 16];
-                let preview_len = if let Ok(mut f) = File::open(&job_path) {
-                    use std::io::Read;
-                    f.read(&mut preview).unwrap_or(0)
-                } else {
-                    0
-                };
-                eprintln!(
-                    "[Spool Monitor] Rejected non-PDF stream on TCP port {} ({} bytes, magic: {:02X?}). Required format is PDF from 'Microsoft Print to PDF' driver.",
-                    port,
-                    total_bytes,
-                    &preview[..preview_len]
-                );
+        // Read first 64 bytes for format inspection
+        let mut preview = [0u8; 64];
+        let preview_len = if let Ok(mut f) = File::open(&raw_job_path) {
+            use std::io::Read;
+            f.read(&mut preview).unwrap_or(0)
+        } else {
+            0
+        };
+
+        let (fmt_name, fmt_desc) = analyze_stream_format(&preview[..preview_len]);
+        let hex_preview = preview[..preview_len.min(32)].iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+        let ascii_preview = String::from_utf8_lossy(&preview[..preview_len.min(64)]).replace("\r", " ").replace("\n", " ");
+
+        logger.log(
+            "Stage 3: Stream Header",
+            &format!("Header (first {}B): Hex: [{}], ASCII: \"{}\"", preview_len.min(32), hex_preview, ascii_preview.trim()),
+        );
+
+        if fmt_name == "PDF" {
+            let pdf_path = spool_dir.join(format!("{}.pdf", job_id));
+            let _ = std::fs::rename(&raw_job_path, &pdf_path);
+            logger.log("Stage 3: Format Verified", &format!("Stream signature: Valid PDF ({})", fmt_desc));
+            logger.log("Stage 3: Enqueued", &format!("Spool file enqueued for worker: {}", pdf_path.display()));
+
+            if let Err(e) = tx.send(SpoolJob {
+                job_id,
+                path: pdf_path,
+                ingest_ms,
+                spool_bytes: total_bytes,
+                mode,
+            }) {
+                logger.log_error("Queue Enqueue", &format!("Failed to enqueue job: {}", e));
             }
-            let _ = std::fs::remove_file(&job_path);
+        } else {
+            let rejected_path = spool_dir.join(format!("{}_rejected_{}.bin", job_id, fmt_name.to_lowercase()));
+            let _ = std::fs::rename(&raw_job_path, &rejected_path);
+            let error_msg = format!(
+                "Rejected non-PDF stream ({} bytes). Detected format: {} ({}). Saved stream to: {}",
+                total_bytes, fmt_name, fmt_desc, rejected_path.display()
+            );
+            logger.log_error("Stage 3: Stream Format Rejected", &error_msg);
+            logger.log_error("Stage 3: Diagnosis", &format!(
+                "CRITICAL NOTE: Windows Print Spooler marked this job as 'Printed' because all bytes were sent to localhost:{}. \
+                However, the print queue sent '{}' instead of PDF. The Canon LBP-1120 driver requires PDF stream from 'Microsoft Print to PDF'. \
+                Check printer queue driver configuration in Windows Settings.",
+                port, fmt_name
+            ));
+            logger.log_summary(
+                "ACCEPTED BY WINDOWS",
+                &format!("SUCCESS (TCP port {})", port),
+                &format!("FAILED: Stream format is {} (not PDF)", fmt_name),
+                "SKIPPED (Invalid format)",
+                "SKIPPED (Invalid format)",
+                "SKIPPED (Invalid format)",
+                "SKIPPED (Invalid format)",
+                &format!("STOPPED AT STAGE 3: Unsupported format '{}' received from print queue.", fmt_name),
+            );
             clear_stuck_windows_jobs();
-            continue;
-        }
-
-        if let Err(e) = tx.send(SpoolJob {
-            path: job_path,
-            ingest_ms,
-            spool_bytes: total_bytes,
-            mode,
-        }) {
-            eprintln!("[Spool Monitor] Failed to enqueue print job: {}", e);
         }
     }
 }
@@ -1222,7 +1420,7 @@ pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
     let (tx, rx) = std::sync::mpsc::channel::<SpoolJob>();
 
     // Dedicated print worker thread: prints jobs sequentially so port is immediately free for next job
-    let worker_silent = silent;
+    let _worker_silent = silent;
     std::thread::spawn(move || {
         // Ensure worker thread is initialized for COM/WinRT MTA (required on Windows 10 & 11)
         unsafe {
@@ -1235,29 +1433,31 @@ pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
 
         while let Ok(job) = rx.recv() {
             let path_str = job.path.to_string_lossy().to_string();
-            if !worker_silent {
-                println!(
-                    "[Spool Worker] Dequeued job: {} ({} bytes, ingested in {} ms, Mode: {})",
-                    path_str, job.spool_bytes, job.ingest_ms, job.mode
-                );
-            }
-            match run_print_job(&path_str, Some(job.ingest_ms), job.mode) {
+            let logger = crate::service::JobLogger::new(&job.job_id);
+            logger.log(
+                "Stage 3: Dequeued",
+                &format!(
+                    "Worker dequeued job {} ({} bytes, ingested in {} ms, Mode: {})",
+                    job.job_id, job.spool_bytes, job.ingest_ms, job.mode
+                ),
+            );
+            match run_print_job_with_logger(&job.job_id, &path_str, Some(job.ingest_ms), job.mode, &logger) {
                 Ok(_) => {
                     let printer_name = match job.mode {
                         HalftoneMode::Normal => PRINTER_NAME_NORMAL,
                         HalftoneMode::Photo => PRINTER_NAME_PHOTO,
                     };
                     clear_completed_job(printer_name);
+                    let _ = std::fs::remove_file(&job.path);
                 }
                 Err(e) => {
-                    if !worker_silent {
-                        eprintln!("Print job failed: {}", e);
-                    }
+                    logger.log_error("Job Execution", &format!("Print job execution failed: {}", e));
                     clear_stuck_windows_jobs();
+                    let failed_path = job.path.with_file_name(format!("{}_failed.pdf", job.job_id));
+                    let _ = std::fs::rename(&job.path, &failed_path);
+                    logger.log_error("Spool Preserved", &format!("Preserved failed spool file for diagnosis: {}", failed_path.display()));
                 }
             }
-            // Cleanup temp file
-            let _ = std::fs::remove_file(&job.path);
         }
     });
 
@@ -1512,10 +1712,12 @@ pub fn clear_windows_print_queue(printer_name: &str) {
         .output();
 }
 
+#[allow(dead_code)]
 pub fn is_pdf_buffer(buf: &[u8]) -> bool {
     buf.windows(4).any(|w| w == b"%PDF")
 }
 
+#[allow(dead_code)]
 pub fn is_pdf_file(path: &std::path::Path) -> bool {
     if let Ok(mut f) = File::open(path) {
         use std::io::Read;
@@ -1555,5 +1757,18 @@ mod tests {
         assert!(!is_pdf_buffer(b"\x89PNG\r\n\x1a\n"));
         assert!(!is_pdf_buffer(b"MZ\x90\x00\x03\x00"));
         assert!(!is_pdf_buffer(b"Plain text document"));
+    }
+
+    #[test]
+    fn test_analyze_stream_format() {
+        assert_eq!(analyze_stream_format(b"%PDF-1.7\n").0, "PDF");
+        assert_eq!(analyze_stream_format(b"\xef\xbb\xbf%PDF-2.0\n").0, "PDF");
+        assert_eq!(analyze_stream_format(b"PK\x03\x04\x14\x00").0, "XPS");
+        assert_eq!(analyze_stream_format(b"\x1b%-12345X@PJL\r\n").0, "PCL");
+        assert_eq!(analyze_stream_format(b"\x1bE\x1b&l0O").0, "PCL");
+        assert_eq!(analyze_stream_format(b"%!PS-Adobe-3.0\n").0, "PostScript");
+        assert_eq!(analyze_stream_format(b"\x01\x00\x00\x00\x40\x00\x00\x00").0, "EMF");
+        assert_eq!(analyze_stream_format(b"Hello from Notepad plain text print job\n").0, "Text");
+        assert_eq!(analyze_stream_format(b"\xde\xad\xbe\xef\x00\x01\x02\x03").0, "Unknown");
     }
 }

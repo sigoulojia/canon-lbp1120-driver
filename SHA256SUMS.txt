@@ -1,2 +1,2 @@
-﻿1e9f55ba8a003a5e6d5e1be14661d2a5dc0deda3d1e4c45e7f88d49ca6caa7a0  CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe
-071cb7469e89b8b47fe693ea624690b235fb4f7307acf9b2f1c5ab85f112f9a6  canon-lbp1120-service.exe
+﻿02acffd1bfeb77aed6983957df8eb7649da6f491ed2a1e90739c2c73a26206b0  CanonLBP1120_Setup_v1.0.0-rc.4_x64.exe
+87c293922966fc79ba5fa28ec4cc913eca41478bf0f1f5c9f34ca3f4ab395d31  canon-lbp1120-service.exe
