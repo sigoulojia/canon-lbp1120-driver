@@ -132,19 +132,25 @@ jobs:
           Write-Host "Generated SHA256 Checksums:"
           Get-Content "SHA256SUMS.txt"
 
+      - name: Stage Release Package Directory
+        run: |
+          New-Item -ItemType Directory -Force -Path "release-staging" | Out-Null
+          Copy-Item "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe" -Destination "release-staging\" -Force
+          Copy-Item "dist\CanonLBP1120\canon-lbp1120-service.exe" -Destination "release-staging\" -Force
+          Copy-Item "SHA256SUMS.txt" -Destination "release-staging\" -Force
+          Copy-Item "RELEASE_NOTES.md" -Destination "release-staging\" -Force
+          Copy-Item "INSTALLATION_GUIDE.md" -Destination "release-staging\" -Force
+          Copy-Item "UNINSTALLATION_AND_RECOVERY.md" -Destination "release-staging\" -Force
+          Copy-Item "WINUSB_COMPATIBILITY_AND_SAFETY.md" -Destination "release-staging\" -Force
+          Copy-Item "SERVICE_SECURITY_AUDIT.md" -Destination "release-staging\" -Force
+          Write-Host "Staged Release Artifacts:"
+          Get-ChildItem -Path "release-staging" | Select-Object Name, Length
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: CanonLBP1120-Installer-v1.0.0-rc.1
-          path: |
-            installer/CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
-            dist/CanonLBP1120/canon-lbp1120-service.exe
-            SHA256SUMS.txt
-            RELEASE_NOTES.md
-            INSTALLATION_GUIDE.md
-            UNINSTALLATION_AND_RECOVERY.md
-            WINUSB_COMPATIBILITY_AND_SAFETY.md
-            SERVICE_SECURITY_AUDIT.md
+          path: release-staging/*
           if-no-files-found: error
 
   publish-prerelease:
@@ -167,6 +173,7 @@ jobs:
           prerelease: true
           name: Canon LaserShot LBP-1120 Driver ${{ github.ref_name }} (Release Candidate)
           body_path: release-artifacts/RELEASE_NOTES.md
+          fail_on_unmatched_files: true
           files: |
             release-artifacts/CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
             release-artifacts/canon-lbp1120-service.exe
