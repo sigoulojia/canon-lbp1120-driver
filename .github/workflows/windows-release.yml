@@ -167,19 +167,15 @@ jobs:
           name: CanonLBP1120-Installer-v1.0.0-rc.1
           path: release-artifacts
 
-      - name: Publish GitHub Prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          name: Canon LaserShot LBP-1120 Driver ${{ github.ref_name }} (Release Candidate)
-          body_path: release-artifacts/RELEASE_NOTES.md
-          fail_on_unmatched_files: true
-          files: |
-            release-artifacts/CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
-            release-artifacts/canon-lbp1120-service.exe
-            release-artifacts/SHA256SUMS.txt
-            release-artifacts/RELEASE_NOTES.md
-            release-artifacts/INSTALLATION_GUIDE.md
-            release-artifacts/UNINSTALLATION_AND_RECOVERY.md
-            release-artifacts/WINUSB_COMPATIBILITY_AND_SAFETY.md
-            release-artifacts/SERVICE_SECURITY_AUDIT.md
+      - name: Publish Official GitHub Prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $files = Get-ChildItem -Path "release-artifacts" | ForEach-Object { $_.FullName }
+          Write-Host "Publishing GitHub Release for ${{ github.ref_name }} with assets:"
+          $files | ForEach-Object { Write-Host "  - $_" }
+          
+          gh release create ${{ github.ref_name }} $files `
+            --title "Canon LaserShot LBP-1120 Driver ${{ github.ref_name }} (Release Candidate)" `
+            --notes-file "release-artifacts\RELEASE_NOTES.md" `
+            --prerelease
