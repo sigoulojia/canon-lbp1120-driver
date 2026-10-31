@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>صفحة اختبار Canon LaserShot LBP-1120</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 15mm 15mm 15mm 15mm;
+        }
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            color: #000;
+            background: #fff;
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+        .header {
+            border-bottom: 3px double #000;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 800;
+        }
+        .header .subtitle {
+            font-size: 13px;
+            color: #333;
+            margin-top: 4px;
+        }
+        .badge {
+            background: #000;
+            color: #fff;
+            padding: 6px 14px;
+            font-weight: bold;
+            font-size: 13px;
+            border-radius: 4px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            border-bottom: 1.5px solid #000;
+            padding-bottom: 4px;
+            margin: 16px 0 10px 0;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        .info-table th, .info-table td {
+            border: 1px solid #000;
+            padding: 6px 10px;
+            text-align: right;
+        }
+        .info-table th {
+            background: #f0f0f0;
+            font-weight: bold;
+        }
+        .font-sample {
+            margin: 4px 0;
+            line-height: 1.3;
+        }
+        .gradient-bar {
+            height: 20px;
+            background: linear-gradient(to left, #000000 0%, #333333 25%, #777777 50%, #bbbbbb 75%, #ffffff 100%);
+            border: 1px solid #000;
+            margin: 10px 0;
+        }
+        .dither-steps {
+            display: flex;
+            height: 28px;
+            border: 1px solid #000;
+            margin: 10px 0;
+        }
+        .dither-step {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            border-top: 1px solid #666;
+            padding-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1>صفحة اختبار الطابعة Canon LaserShot LBP-1120</h1>
+            <div class="subtitle">اختبار سلامة الاتصال وجودة الطباعة بدقة 600 DPI (SCoA / CAPT v1)</div>
+        </div>
+        <div class="badge">Windows 10/11 x64</div>
+    </div>
+
+    <div class="section-title">بيانات الطابعة والاتصال</div>
+    <table class="info-table">
+        <tr>
+            <th style="width: 30%;">اسم الطابعة</th>
+            <td>Canon LaserShot LBP-1120 (USB)</td>
+            <th style="width: 25%;">معرف الجهاز (Hardware ID)</th>
+            <td>VID 0x04A9 / PID 0x261A</td>
+        </tr>
+        <tr>
+            <th>بروتوكول الطباعة</th>
+            <td>CAPT v1 مع ضغط SCoA 2D Delta</td>
+            <th>منفذ التوصيل</th>
+            <td>WinUSB Bulk Endpoints (0x01 / 0x82)</td>
+        </tr>
+        <tr>
+            <th>وضعية المعالجة</th>
+            <td>Direct PDF Engine (Standard Mode)</td>
+            <th>الدقة الهندسية</th>
+            <td>600 × 600 DPI (A4 Canvas 4736 × 6778)</td>
+        </tr>
+    </table>
+
+    <div class="section-title">اختبار الخطوط والنصوص العربية والإنجليزية</div>
+    <div class="font-sample" style="font-size: 20px; font-weight: bold;">
+        بسم الله الرحمن الرحيم - تجربة طباعة نص كبير (20pt)
+    </div>
+    <div class="font-sample" style="font-size: 14px;">
+        نص عربي عادي بحجم 14pt: تم ضبط المشغّل بنجاح على نظام ويندوز للطباعة المباشرة من أي برنامج.
+    </div>
+    <div class="font-sample" style="font-size: 11px;">
+        نص متوسط بحجم 11pt: الحروف واضحة ودقيقة بفضل معالجة التباين المتقدمة والدقة الأصلية لمحرّك الليزر.
+    </div>
+    <div class="font-sample" style="font-size: 8.5px; color: #222;">
+        نص صغير بحجم 8.5pt: English typography test: The quick brown fox jumps over the lazy dog. 1234567890 ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    </div>
+
+    <div class="section-title">اختبار التدرج والتباين اللوني (Halftone Gradient)</div>
+    <div class="gradient-bar"></div>
+    <div class="dither-steps">
+        <div class="dither-step" style="background: #000; color: #fff;">100%</div>
+        <div class="dither-step" style="background: #222; color: #fff;">90%</div>
+        <div class="dither-step" style="background: #444; color: #fff;">75%</div>
+        <div class="dither-step" style="background: #666; color: #fff;">60%</div>
+        <div class="dither-step" style="background: #888; color: #fff;">50%</div>
+        <div class="dither-step" style="background: #aaa; color: #000;">35%</div>
+        <div class="dither-step" style="background: #ccc; color: #000;">20%</div>
+        <div class="dither-step" style="background: #eee; color: #000;">10%</div>
+        <div class="dither-step" style="background: #fff; color: #000;">0%</div>
+    </div>
+
+    <div class="footer">
+        <span>تم إنشاء صفحة الاختبار بنجاح بواسطة نظام المشغل المخصص لطابعات كانون</span>
+        <span>Canon LBP-1120 Native 64-Bit Subsystem</span>
+    </div>
+
+</body>
+</html>
+

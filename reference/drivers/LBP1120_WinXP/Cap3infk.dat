@@ -1,0 +1,80 @@
+; Canon Advanced Printing Technology 
+; Printer DATA Text for Windows 2000/XP
+; Copyright CANON INC. 1998-2002 All Rights Reserved
+; CAP3INF.DAT
+
+; CAPT Original as below. Use CAPT module only...
+; FileName = fMove, fNet, fDepend, DIR1, DIR2, DIR3, Size, Time, Date, Version
+; ' =,\t\n\r'
+[CAPTFileConfig]
+CAP3SMK.DLL    = 1, 1, 1, W32_3, SYS32,     0,   40960, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3LMK.DLL    = 1, 1, 1, W32_3, SYS32,     0,   13824, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3RSK.EXE    = 1, 1, 1, W32_3, SYS32,     0,   61512, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3EMN.DLL    = 1, 1, 1, W32_3, SYS32,     0,   54272, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3PTMN.DLL   = 1, 1, 1, W32_3, SYS32,     0,   23040, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3INFK.DAT   = 0, 0, 1, W32_3,   W32,     0,    4961, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3SETK.DLL   = 0, 0, 1, W32_3,   W32,     0,  117760, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3.HLP       = 0, 0, 1, W32_3,   W32,     0,  126495, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3.CNT       = 0, 0, 1, W32_3,   W32,     0,    1776, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3HT.BIN     = 0, 0, 1, W32_3,   W32,     0,   90744, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3RDN.DLL    = 0, 0, 1, W32_3,   W32,     0,   47616, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3PMN.DLL    = 0, 0, 1, W32_3,   W32,     0,  133632, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3LAK.EXE    = 0, 0, 1, W32_3,   W32,     0,   30720, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3SWK.EXE    = 0, 0, 1, W32_3,   W32,     0,  136704, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3UNIK.EXE   = 0, 0, 1, W32_3,   W32,     0,   56832, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3TRSK.EXE   = 0, 0, 1, W32_3,   W32,     0,  270848, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3K.DLL      = 0, 0, 1, W32_3,   W32,     0,   99950, 00:00:00, 2002/07/19, 0.03.0.000
+CAP3UIK.DLL    = 0, 0, 1, W32_3,   W32,     0,  299344, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3APPN.DAT   = 0, 0, 1, W32_3,   W32,     0,    2038, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3ONN.EXE    = 0, 0, 1, W32_3,   W32,     0,   22528, 00:00:00, 2002/07/19, 1.00.0.007
+CAP3ZWAV.BIN   = 0, 0, 1, W32_3,   W32,     0,  412070, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3STOP.WAV   = 0, 0, 1, W32_3,     0,     0,   27008, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3DONE.WAV   = 0, 0, 1, W32_3,     0,     0,   22621, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3PAUS.WAV   = 0, 0, 1, W32_3,     0,     0,   24613, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3RESM.WAV   = 0, 0, 1, W32_3,     0,     0,   26605, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3STRT.WAV   = 0, 0, 1, W32_3,     0,     0,   21957, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3ADDP.WAV   = 0, 0, 1, W32_3,     0,     0,   27268, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3COME.WAV   = 0, 0, 1, W32_3,     0,     0,   27268, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3COVR.WAV   = 0, 0, 1, W32_3,     0,     0,   27268, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3ERR.WAV    = 0, 0, 1, W32_3,     0,     0,   18636, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3JAM.WAV    = 0, 0, 1, W32_3,     0,     0,   16644, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3CHGP.WAV   = 0, 0, 1, W32_3,     0,     0,   21956, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3SERR.WAV   = 0, 0, 1, W32_3,     0,     0,   29260, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3MEM.WAV    = 0, 0, 1, W32_3,     0,     0,   25940, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3CLN.WAV    = 0, 0, 1, W32_3,     0,     0,   14652, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3CART.WAV   = 0, 0, 1, W32_3,     0,     0,   34572, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3POTB.WAV   = 0, 0, 1, W32_3,     0,     0,   19965, 00:00:00, 2002/07/19, 00.00.00.00
+CAP3FAIL.WAV   = 0, 0, 1, W32_3,     0,     0,   25277, 00:00:00, 2002/07/19, 00.00.00.00
+
+[CAPT Groups]
+NumItems = 4
+GroupName = Canon LASER SHOT LBP-1120
+CAPTItem1 = CAP3.HLP,Canon LASER SHOT LBP-1120 Help,@
+CAPTItem2 = CAP3LAK.EXE,Canon LASER SHOT LBP-1120 Status Window,@
+CAPTItem3 = CAP3UNIK.EXE,Canon LASER SHOT LBP-1120 Uninstallation,@
+CAPTItem4 = CAP3TRSK.EXE,Canon LASER SHOT LBP-1120 Trouble Shooter,@
+
+[CAPT Startup]
+NumItems = 1
+CAPTItem1 = CAP3LAK.EXE,Canon LASER SHOT LBP-1120 Status Window,!N,@
+
+[CAPT Sound]
+NumItems = 17
+SoundTitle = Title,Standard
+CAPTItem1  = PrintStop,     CAP3STOP.WAV
+CAPTItem2  = PrintComplete, CAP3DONE.WAV
+CAPTItem3  = PrintPause,    CAP3PAUS.WAV
+CAPTItem4  = PrintResume,   CAP3RESM.WAV
+CAPTItem5  = PrintStart,    CAP3STRT.WAV
+CAPTItem6  = AddPaper,      CAP3ADDP.WAV
+CAPTItem7  = CheckPrinter,  CAP3COME.WAV
+CAPTItem8  = CoverOpen,     CAP3COVR.WAV
+CAPTItem9  = PrinterError,  CAP3ERR.WAV
+CAPTItem10 = PaperJam,      CAP3JAM.WAV
+CAPTItem11 = ChangePaper,   CAP3CHGP.WAV
+CAPTItem12 = CheckServer,   CAP3SERR.WAV
+CAPTItem13 = LowMemory,     CAP3MEM.WAV
+CAPTItem14 = Cleaning,      CAP3CLN.WAV
+CAPTItem15 = NoCartridge,   CAP3CART.WAV
+CAPTItem16 = PortBusy,      CAP3POTB.WAV
+CAPTItem17 = PrintFail,     CAP3FAIL.WAV

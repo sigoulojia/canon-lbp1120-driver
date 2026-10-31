@@ -1,0 +1,42 @@
+:Base Cap3.hlp>main
+:Title Canon LASER SHOT LBP-1120 Help
+1 About this Help File
+2 How to use help=how_help
+2 Trademarks=how_tm
+1 About this Printer Driver
+2 What is a printer driver?=how_drv
+2 Printer driver features=how_drvchar
+1 Using Profiles
+2 Selecting a profile for printing=how_favor_op1
+2 Registering a profile=how_favor_op2
+2 Deleting a profile=how_favor_op3
+2 Changing the order of profiles in the list=how_favor_op4
+2 Saving a profile as a file=how_favor_op5
+2 Loading a profile from a file=how_favor_op6
+1 How to Make Paper Settings
+2 How to choose paper size=how_papersize
+2 Using non-standard paper sizes=how_custompaper
+2 Available paper sizes=how_availablepaper
+1 How to Set Printing Quality
+2 How to change printer resolution=how_adj_resolution
+2 How to smooth jagged type and graphics=how_adj_jagged
+2 How to print gray images=how_adj_gray
+2 How to adjust brightness and contrast=how_adj_bright
+2 How to adjust toner density=how_adj_toner
+2 How to save toner=how_adj_tonersaver
+1 Printing Multiple Pages on One Sheet of Paper
+2 Printing multiple pages on one sheet of paper=how_pglayout
+1 Printing Enlarged/Reduced Documents
+2 Printing enlarged/reduced documents on different paper sizes=how_scale1
+2 Printing enlarged/reduced documents at designated ratios=how_scale2
+1 Printing Over Print Data(Overlay Printing)
+2 Overlay printing=how_overlay1
+2 How to print overlay=how_overlay2
+1 Using the Status Window
+2 What is the Status Window?=statuswindow
+2 How to check the status of a print job=how_mon_status
+2 How to control print jobs from the Status Window=how_mon_control
+2 How to accompany messages with sounds=how_mon_sound
+1 Problem solving
+2 Problems=pbs_problems
+2 Troubleshooting techniques=pbs_troubleshoot

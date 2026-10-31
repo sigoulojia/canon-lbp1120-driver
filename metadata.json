@@ -1,0 +1,5 @@
+{
+  "name": "Canon LBP-1120 CAPT Driver Ecosystem & Engineering Workbench",
+  "description": "Production-grade driver ecosystem, CAPT 1.0 / SCoA protocol analyzer, 9-algorithm monochrome halftoning studio, traceable job state machine, and cross-platform Windows/Linux management suite for the Canon LaserShot LBP-1120.",
+  "requestFramePermissions": []
+}

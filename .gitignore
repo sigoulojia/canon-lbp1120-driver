@@ -1,0 +1,11 @@
+/target
+/node_modules
+/dist
+*.pbm
+*.bmp
+*.capt
+*.bin.tmp
+lbp1120_*.pdf
+lbp1120_*.log
+.DS_Store
+Thumbs.db

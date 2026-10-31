@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>صفحة اختبار Canon LaserShot LBP-1120 (3 صفحات)</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 15mm 12mm 15mm;
+        }
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+            color: #000;
+            background: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+        }
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm 15mm;
+            margin: 0 auto 20px auto;
+            background: #fff;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            page-break-after: always;
+            position: relative;
+        }
+        @media print {
+            body {
+                background: none;
+                padding: 0;
+            }
+            .page {
+                box-shadow: none;
+                margin: 0;
+                width: 100%;
+                min-height: auto;
+                page-break-after: always;
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+        .header {
+            border-bottom: 3px double #000;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 800;
+        }
+        .header .subtitle {
+            font-size: 13px;
+            color: #333;
+            margin-top: 4px;
+        }
+        .badge {
+            background: #000;
+            color: #fff;
+            padding: 6px 14px;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 4px;
+        }
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            border-bottom: 1.5px solid #000;
+            padding-bottom: 4px;
+            margin: 20px 0 10px 0;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        .info-table th, .info-table td {
+            border: 1px solid #000;
+            padding: 6px 10px;
+            text-align: right;
+        }
+        .info-table th {
+            background: #e6e6e6;
+            font-weight: bold;
+        }
+        .font-sample {
+            margin: 6px 0;
+            line-height: 1.3;
+        }
+        .gradient-bar {
+            height: 25px;
+            background: linear-gradient(to left, #000000 0%, #333333 25%, #777777 50%, #bbbbbb 75%, #ffffff 100%);
+            border: 1px solid #000;
+            margin: 10px 0;
+        }
+        .dither-steps {
+            display: flex;
+            height: 35px;
+            border: 1px solid #000;
+            margin: 10px 0;
+        }
+        .dither-step {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .page-footer {
+            position: absolute;
+            bottom: 12mm;
+            left: 15mm;
+            right: 15mm;
+            border-top: 1px solid #666;
+            padding-top: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #444;
+        }
+        .print-btn-bar {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .print-btn {
+            background: #0066cc;
+            color: white;
+            padding: 12px 28px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,102,204,0.3);
+        }
+        .print-btn:hover {
+            background: #004c99;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="print-btn-bar no-print">
+        <button class="print-btn" onclick="window.print()">🖨️ طباعة المستند التجريبي (3 صفحات A4)</button>
+        <p style="font-size: 13px; color: #555; margin-top: 8px;">اختر طابعة <b>Canon LaserShot LBP-1120</b> من قائمة الطباعة (Ctrl+P)</p>
+    </div>
+
+    <!-- الصفحة الأولى: صفحة معلومات واختبار النصوص ودقة الخطوط -->
+    <div class="page">
+        <div class="header">
+            <div>
+                <h1>اختبار الطابعة: CANON LASERSHOT LBP-1120</h1>
+                <div class="subtitle">تعريف Native 64-bit Spooler & SCoA Engine لويندوز 10 و 11</div>
+            </div>
+            <div class="badge">صفحة 1 من 3</div>
+        </div>
+
+        <div class="section-title">بيانات ومواصفات التشغيل (Reverse-Engineered Parameters)</div>
+        <table class="info-table">
+            <tr>
+                <th width="35%">المعيار الهندي / الخاصية</th>
+                <th>القيمة المعتمدة في النظام</th>
+                <th>المصدر المعماري (Win7/XP Drivers)</th>
+            </tr>
+            <tr>
+                <td>طراز الطابعة الهدف (Target Model)</td>
+                <td><b>0x01A4 (420 Decimal)</b></td>
+                <td>مكتبة <code>CAP3K.DLL</code> (CAPT Protocol v1.1)</td>
+            </tr>
+            <tr>
+                <td>دقة الطباعة الفيزيائية (Resolution)</td>
+                <td><b>600 × 600 DPI (600 Dots Per Inch)</b></td>
+                <td>قيمة السجل <code>0x11</code> في كود <code>IC_BEGIN_PAGE</code></td>
+            </tr>
+            <tr>
+                <td>أبعاد الإطار النقطي لورق A4</td>
+                <td><b>4736 بكسل عرضاً × 6778 سطراً طولاً</b></td>
+                <td>592 بايت/سطر (مطابقة تامة لأسطوانة كانون)</td>
+            </tr>
+            <tr>
+                <td>قنوات الاتصال المباشر (USB Endpoints)</td>
+                <td><b>Bulk OUT: 0x01 | Bulk IN: 0x82</b></td>
+                <td>معرف العتاد <code>USB\VID_04A9&PID_2608</code></td>
+            </tr>
+            <tr>
+                <td>محرك الضغط النقطي (Compression)</td>
+                <td><b>SCoA 2D Delta Encoding (Lossless)</b></td>
+                <td>خوارزمية <code>CAP3RDN.DLL (HRE)</code></td>
+            </tr>
+            <tr>
+                <td>الأصوات والتنبيهات المدمجة</td>
+                <td><b>17 ملف صوتي رسمي مستخرج بدقة</b></td>
+                <td>أرشيف الأصوات <code>CAP3ZWAV.BIN</code></td>
+            </tr>
+        </table>
+
+        <div class="section-title">اختبار حدة الحروف والنصوص العربية والإنجليزية (Text Sharpness)</div>
+        <div class="font-sample" style="font-size: 6pt;">[6pt] هذه عينة خط بحجم 6 نقاط لاختبار قدرة العدسة الليزرية على إظهار الحروف المتناهية الصغر. Canon LBP-1120 Micro Text Test.</div>
+        <div class="font-sample" style="font-size: 8pt;">[8pt] هذه عينة خط بحجم 8 نقاط. وضوح تام للحركات والتشكيل والنقاط: بِسْمِ اللَّـهِ الرَّحْمَـٰنِ الرَّحِيمِ.</div>
+        <div class="font-sample" style="font-size: 10pt;">[10pt] هذه عينة خط بحجم 10 نقاط القياسي للمستندات والرسائل الرسمية والمذكرات القانونية.</div>
+        <div class="font-sample" style="font-size: 12pt;">[12pt] تجربة خط عريض بحجم 12 نقطة: <b>Canon Advanced Printing Technology for Windows 10 & 11 64-bit</b>.</div>
+        <div class="font-sample" style="font-size: 16pt;">[16pt] اختبار العناوين المتوسطة بحجم 16 نقطة: <b>نظام الطباعة عالي الكفاءة</b>.</div>
+        <div class="font-sample" style="font-size: 22pt;">[22pt] <b>عنوان رئيسي بحجم 22 نقطة: دقة 600 DPI ليزر</b></div>
+
+        <div class="section-title">اختبار الخطوط الرفيعة والشبكة المتعامدة (Line Calibration Grid)</div>
+        <div style="height: 45px; border: 1px solid #000; position: relative; margin-top: 8px;">
+            <div style="position: absolute; left: 0; right: 0; top: 10px; height: 0.5px; background: #000;"></div>
+            <div style="position: absolute; left: 0; right: 0; top: 22px; height: 1px; background: #000;"></div>
+            <div style="position: absolute; left: 0; right: 0; top: 34px; height: 2px; background: #000;"></div>
+            <div style="position: absolute; top: 0; bottom: 0; left: 25%; width: 0.5px; background: #000;"></div>
+            <div style="position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #000;"></div>
+            <div style="position: absolute; top: 0; bottom: 0; left: 75%; width: 2px; background: #000;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 10px; color: #555; margin-top: 3px;">
+            <span>0.5pt Line</span>
+            <span>1.0pt Line</span>
+            <span>2.0pt Line</span>
+        </div>
+
+        <div class="page-footer">
+            <span>Canon LaserShot LBP-1120 Diagnostic Suite</span>
+            <span>الصفحة 1 من 3</span>
+            <span>Windows 10 / 11 64-bit Architecture</span>
+        </div>
+    </div>
+
+    <!-- الصفحة الثانية: اختبار التدرج الرمادي والتنقيط (Halftone & Grayscale) -->
+    <div class="page">
+        <div class="header">
+            <div>
+                <h1>اختبار التدرجات الرمادية: CANON LBP-1120</h1>
+                <div class="subtitle">معايرة جداول التنقيط Halftone Matrices ومصفوفات Dithering</div>
+            </div>
+            <div class="badge">صفحة 2 من 3</div>
+        </div>
+
+        <div class="section-title">شريط التدرج الخطي المستمر (Continuous Grayscale Ramp: 0% -> 100%)</div>
+        <p style="font-size: 11px; margin: 4px 0;">يختبر هذا الشريط قدرة المحرك على توزيع نقاط الليزر بنعومة وبدون ظهور خطوط عمودية (Banding):</p>
+        <div class="gradient-bar"></div>
+        <div style="display: flex; justify-content: space-between; font-size: 11px; font-weight: bold;">
+            <span>100% أسود نقي</span>
+            <span>75% رمادي غامق</span>
+            <span>50% رمادي متوسط</span>
+            <span>25% رمادي فاتح</span>
+            <span>0% أبيض نقي</span>
+        </div>
+
+        <div class="section-title">مستويات التظليل الرقمية الثابتة (Stepped Density Patches)</div>
+        <div class="dither-steps">
+            <div class="dither-step" style="background: #000000; color: #fff;">100%</div>
+            <div class="dither-step" style="background: #1a1a1a; color: #fff;">90%</div>
+            <div class="dither-step" style="background: #333333; color: #fff;">80%</div>
+            <div class="dither-step" style="background: #4d4d4d; color: #fff;">70%</div>
+            <div class="dither-step" style="background: #666666; color: #fff;">60%</div>
+            <div class="dither-step" style="background: #808080; color: #000;">50%</div>
+            <div class="dither-step" style="background: #999999; color: #000;">40%</div>
+            <div class="dither-step" style="background: #b3b3b3; color: #000;">30%</div>
+            <div class="dither-step" style="background: #cccccc; color: #000;">20%</div>
+            <div class="dither-step" style="background: #e6e6e6; color: #000;">10%</div>
+            <div class="dither-step" style="background: #ffffff; color: #000;">0%</div>
+        </div>
+
+        <div class="section-title">مصفوفات التباين والزوايا الهندسية (Radial & Angle Resolution)</div>
+        <div class="grid-2" style="margin-top: 15px;">
+            <div style="border: 1px solid #000; padding: 10px; text-align: center;">
+                <svg width="220" height="150" viewBox="0 0 220 150">
+                    <circle cx="110" cy="75" r="60" fill="none" stroke="#000" stroke-width="1"/>
+                    <circle cx="110" cy="75" r="45" fill="none" stroke="#000" stroke-width="1"/>
+                    <circle cx="110" cy="75" r="30" fill="none" stroke="#000" stroke-width="1.5"/>
+                    <circle cx="110" cy="75" r="15" fill="none" stroke="#000" stroke-width="2"/>
+                    <line x1="110" y1="5" x2="110" y2="145" stroke="#000" stroke-width="0.8"/>
+                    <line x1="40" y1="75" x2="180" y2="75" stroke="#000" stroke-width="0.8"/>
+                    <line x1="60" y1="25" x2="160" y2="125" stroke="#000" stroke-width="0.8"/>
+                    <line x1="160" y1="25" x2="60" y2="125" stroke="#000" stroke-width="0.8"/>
+                </svg>
+                <div style="font-size: 11px; font-weight: bold; margin-top: 4px;">دوائر التركيز البؤري (Concentric Circles)</div>
+            </div>
+            <div style="border: 1px solid #000; padding: 10px; text-align: center;">
+                <svg width="220" height="150" viewBox="0 0 220 150">
+                    <rect x="20" y="15" width="85" height="55" fill="#222"/>
+                    <rect x="115" y="15" width="85" height="55" fill="#666"/>
+                    <rect x="20" y="80" width="85" height="55" fill="#aaa"/>
+                    <rect x="115" y="80" width="85" height="55" fill="#eee" stroke="#999"/>
+                    <text x="62" y="47" fill="#fff" font-size="12" font-weight="bold" text-anchor="middle">Black 85%</text>
+                    <text x="157" y="47" fill="#fff" font-size="12" font-weight="bold" text-anchor="middle">Gray 60%</text>
+                    <text x="62" y="112" fill="#000" font-size="12" font-weight="bold" text-anchor="middle">Gray 30%</text>
+                    <text x="157" y="112" fill="#000" font-size="12" font-weight="bold" text-anchor="middle">White 5%</text>
+                </svg>
+                <div style="font-size: 11px; font-weight: bold; margin-top: 4px;">مربعات الكثافة اللونية (Solid Fill Density)</div>
+            </div>
+        </div>
+
+        <div class="page-footer">
+            <span>Canon LaserShot LBP-1120 Diagnostic Suite</span>
+            <span>الصفحة 2 من 3</span>
+            <span>Halftone & Dither Calibration</span>
+        </div>
+    </div>
+
+    <!-- الصفحة الثالثة: نموذج مستند وفاتورة رسمية كاملة مع باركود وجداول -->
+    <div class="page">
+        <div class="header">
+            <div>
+                <h1>تقرير عمل رسمي: CANON LBP-1120</h1>
+                <div class="subtitle">نموذج لمستند مكتبي متكامل مع جداول وباركود وأرقام</div>
+            </div>
+            <div class="badge">صفحة 3 من 3</div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+            <div>
+                <b>رقم المستند:</b> DOC-2026-LBP1120<br>
+                <b>تاريخ الطباعة:</b> 16 أكتوبر 2026<br>
+                <b>المستخدم:</b> مسؤول النظام (Administrator)
+            </div>
+            <div style="text-align: left;">
+                <b>نظام التشغيل:</b> Windows 11 Pro 64-bit<br>
+                <b>حالة المحرك:</b> Online / Unit Reserved<br>
+                <b>المنفذ:</b> \\.\pipe\CanonLBP1120
+            </div>
+        </div>
+
+        <div class="section-title">بيان مكونات حزمة التعريف وبرمجيات كانون المتدخلة</div>
+        <table class="info-table">
+            <thead>
+                <tr>
+                    <th width="8%">#</th>
+                    <th>الملف الأصلي</th>
+                    <th>النظام المصدر</th>
+                    <th>الحجم</th>
+                    <th>الدور المدمج في بيئة 64-bit الحالية</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><b>CAP3SETK.INF</b></td>
+                    <td>Win7 32-bit</td>
+                    <td>2,286 B</td>
+                    <td>مرجع تعريف المعرف <code>CanonLASER_SHOT_LBP-91D2</code></td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td><b>Cap3ht.bin</b></td>
+                    <td>WinXP / Win7</td>
+                    <td>90,744 B</td>
+                    <td>مصفوفات الـ 4 أنماط لتنقيط وتنعيم التدرج الرمادي للصور</td>
+                </tr>
+                <tr>
+                    <td>3</td>
+                    <td><b>CAP3ZWAV.BIN</b></td>
+                    <td>WinXP / Win7</td>
+                    <td>412,070 B</td>
+                    <td>الأصوات الأصلية الـ 17 المنطلقة عند بدء ونهاية الطباعة وتنبيه الورق</td>
+                </tr>
+                <tr>
+                    <td>4</td>
+                    <td><b>CAP3LMK.DLL</b></td>
+                    <td>Win7 32-bit</td>
+                    <td>13,824 B</td>
+                    <td>معمارية الـ Named Pipes لتجاوز حاجز عزل Session 0</td>
+                </tr>
+                <tr>
+                    <td>5</td>
+                    <td><b>CAP3RDN.DLL</b></td>
+                    <td>Win7 32-bit</td>
+                    <td>49,664 B</td>
+                    <td>خوارزمية SCoA 2D Delta Compression المطبقة في الروست</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="section-title">رمز الباركود والتحقق التلقائي (Machine-Readable Barcode)</div>
+        <div style="text-align: center; margin: 25px 0;">
+            <!-- كود باركود تجريبي -->
+            <svg width="340" height="75" viewBox="0 0 340 75">
+                <rect x="0" y="0" width="340" height="60" fill="#fff"/>
+                <!-- شفرة باركود تمثيلية عالية الدقة -->
+                <rect x="20" y="5" width="4" height="50" fill="#000"/>
+                <rect x="28" y="5" width="2" height="50" fill="#000"/>
+                <rect x="34" y="5" width="6" height="50" fill="#000"/>
+                <rect x="44" y="5" width="2" height="50" fill="#000"/>
+                <rect x="50" y="5" width="4" height="50" fill="#000"/>
+                <rect x="58" y="5" width="6" height="50" fill="#000"/>
+                <rect x="68" y="5" width="2" height="50" fill="#000"/>
+                <rect x="74" y="5" width="4" height="50" fill="#000"/>
+                <rect x="82" y="5" width="8" height="50" fill="#000"/>
+                <rect x="94" y="5" width="2" height="50" fill="#000"/>
+                <rect x="100" y="5" width="4" height="50" fill="#000"/>
+                <rect x="110" y="5" width="6" height="50" fill="#000"/>
+                <rect x="120" y="5" width="2" height="50" fill="#000"/>
+                <rect x="126" y="5" width="4" height="50" fill="#000"/>
+                <rect x="134" y="5" width="2" height="50" fill="#000"/>
+                <rect x="140" y="5" width="6" height="50" fill="#000"/>
+                <rect x="150" y="5" width="4" height="50" fill="#000"/>
+                <rect x="158" y="5" width="8" height="50" fill="#000"/>
+                <rect x="170" y="5" width="2" height="50" fill="#000"/>
+                <rect x="176" y="5" width="4" height="50" fill="#000"/>
+                <rect x="184" y="5" width="6" height="50" fill="#000"/>
+                <rect x="194" y="5" width="2" height="50" fill="#000"/>
+                <rect x="200" y="5" width="4" height="50" fill="#000"/>
+                <rect x="208" y="5" width="6" height="50" fill="#000"/>
+                <rect x="218" y="5" width="2" height="50" fill="#000"/>
+                <rect x="224" y="5" width="4" height="50" fill="#000"/>
+                <rect x="232" y="5" width="8" height="50" fill="#000"/>
+                <rect x="244" y="5" width="2" height="50" fill="#000"/>
+                <rect x="250" y="5" width="4" height="50" fill="#000"/>
+                <rect x="260" y="5" width="6" height="50" fill="#000"/>
+                <rect x="270" y="5" width="2" height="50" fill="#000"/>
+                <rect x="276" y="5" width="4" height="50" fill="#000"/>
+                <rect x="284" y="5" width="2" height="50" fill="#000"/>
+                <rect x="290" y="5" width="6" height="50" fill="#000"/>
+                <rect x="300" y="5" width="4" height="50" fill="#000"/>
+                <rect x="308" y="5" width="8" height="50" fill="#000"/>
+                <text x="170" y="70" font-family="Courier, monospace" font-size="12" font-weight="bold" text-anchor="middle">*CANON-LBP1120-X64-OK*</text>
+            </svg>
+            <div style="font-size: 11px; color: #444; margin-top: 5px;">اختبار دقة حواف خطوط الباركود (Zero-Bleed Laser Edge Test)</div>
+        </div>
+
+        <div style="border: 1px dashed #000; padding: 12px; margin-top: 15px; font-size: 12px; line-height: 1.5;">
+            <b>ملاحظة النجاح:</b> إذا خرجت هذه الصفحات الثلاث من درج الطابعة بوضوح تام، فهذا يعني أن محرك <b>SCoA</b>، واتصال الـ <b>WinUSB</b>، ومحاذاة ورق <b>A4</b>، وإشارات انتهاء تغذية الورق <code>IC_END_PAGE</code> تعمل جميعها بتوافقية 100% على بيئة <b>Windows 64-bit</b>!
+        </div>
+
+        <div class="page-footer">
+            <span>Canon LaserShot LBP-1120 Diagnostic Suite</span>
+            <span>الصفحة 3 من 3</span>
+            <span>Document & Barcode Sample</span>
+        </div>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,66 @@
+*PPD-Adobe: "4.3"
+*% Canon LaserShot LBP-1120 CUPS PPD Specification (CAPT 1.0 / SCoA)
+*FormatVersion: "4.3"
+*FileVersion: "2.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "CNL1120.PPD"
+*Manufacturer: "Canon"
+*Product: "(LASER SHOT LBP-1120)"
+*ModelName: "Canon LASER SHOT LBP-1120"
+*ShortNickName: "Canon LBP-1120 CAPT"
+*NickName: "Canon LASER SHOT LBP-1120 CAPT v1.0 (Open-Source Rust Driver)"
+*PSVersion: "(3010.000) 550"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "10"
+*cupsVersion: 1.5
+*cupsManualCopies: False
+*cupsModelNumber: 420
+*cupsFilter: "application/vnd.cups-raster 50 rastertocapt1120"
+*1284DeviceID: "MFG:Canon;MDL:LASER SHOT LBP-1120;CMD:CAPT;CLS:PRINTER;"
+
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: A4
+*PageSize A4/A4 (210 x 297 mm): "<</PageSize[595 842]/ImagingBBox null>>setpagedevice"
+*PageSize Letter/US Letter (8.5 x 11 in): "<</PageSize[612 792]/ImagingBBox null>>setpagedevice"
+*PageSize Legal/US Legal (8.5 x 14 in): "<</PageSize[612 1008]/ImagingBBox null>>setpagedevice"
+*PageSize Executive/Executive (7.25 x 10.5 in): "<</PageSize[522 756]/ImagingBBox null>>setpagedevice"
+*PageSize B5/JIS B5 (182 x 257 mm): "<</PageSize[516 729]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageSize
+
+*OpenUI *Resolution/Print Resolution: PickOne
+*OrderDependency: 20 AnySetup *Resolution
+*DefaultResolution: 600dpi
+*Resolution 600dpi/600 x 600 DPI (Native Laser): "<</HWResolution[600 600]>>setpagedevice"
+*Resolution 300dpi/300 x 300 DPI (High-Speed Draft): "<</HWResolution[300 300]>>setpagedevice"
+*CloseUI: *Resolution
+
+*OpenUI *CaptHalftonePreset/Halftoning & Document Mode: PickOne
+*OrderDependency: 30 AnySetup *CaptHalftonePreset
+*DefaultCaptHalftonePreset: Mixed
+*CaptHalftonePreset Text/Crisp Text (Otsu Adaptive): ""
+*CaptHalftonePreset Mixed/Mixed Document (Snapped + 8x8 Clustered): ""
+*CaptHalftonePreset Graphics/Vector Graphics (Canon Cap3ht 16x16): ""
+*CaptHalftonePreset Photo/Photograph (Serpentine Floyd-Steinberg): ""
+*CaptHalftonePreset HQPhoto/High-Quality Photo (Stucki 12-Tap): ""
+*CaptHalftonePreset Draft/Economy Toner-Saver (Atkinson): ""
+*CloseUI: *CaptHalftonePreset
+
+*OpenUI *CaptTonerDensity/Toner Density (Laser PWM): PickOne
+*DefaultCaptTonerDensity: 31
+*CaptTonerDensity 16/Light (16): ""
+*CaptTonerDensity 24/Medium-Light (24): ""
+*CaptTonerDensity 31/Factory Standard (31): ""
+*CaptTonerDensity 40/Dark (40): ""
+*CaptTonerDensity 48/Maximum Contrast (48): ""
+*CloseUI: *CaptTonerDensity
+
+*OpenUI *CaptSmooth/AIR Automatic Image Refinement: Boolean
+*DefaultCaptSmooth: True
+*CaptSmooth True/Enabled (0x02): ""
+*CaptSmooth False/Disabled (0x00): ""
+*CloseUI: *CaptSmooth
