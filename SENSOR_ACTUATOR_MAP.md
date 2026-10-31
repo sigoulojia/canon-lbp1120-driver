@@ -32,3 +32,4 @@
 | **TH2** | **Sub-Thermistor** | NTC Thermistor | Edge of ceramic heater strip | Monitors thermal gradient across fixing sleeve to prevent edge overheating on narrow media (B5/Executive). |
 | **TF1** | **Thermal Cutoff (Thermal Fuse)** | Bimetal fusible alloy link | Affixed above ceramic heater substrate | Secondary physical emergency safety: Permanently opens AC mains circuit at $228^\circ\text{C}$ on runaway. |
 | **ANT1**| **Toner Level Antenna** | Conductive metal capacitive probe | Cartridge mounting rail | Senses magnetic permeability of remaining iron-oxide toner inside the EP-22 hopper. |
+

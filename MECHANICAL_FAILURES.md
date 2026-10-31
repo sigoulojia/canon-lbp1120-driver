@@ -58,3 +58,4 @@ The fixing assembly contains dual thermistors (`TH1` main thermistor at center, 
 | **Toner Cartridge Missing** | Optical / Antenna Sense | Extended Status (`0xA0A0`) | `(engine_raw & 0x2000) != 0` | `"Printer error occurred"` (`Cap3err.wav`) |
 | **Active Printing Cycle** | Main Motor / Laser | Basic Status (`0xE0A0`) | `basic & 0x01 != 0` | `"Printing has started"` (`Cap3strt.wav`) |
 | **Page Ejection Complete** | `PS201` (Flag reset) | Extended Status (`0xA0A0`) | `printed_pages` incremented | `"Print job completed"` (`Cap3done.wav`) |
+

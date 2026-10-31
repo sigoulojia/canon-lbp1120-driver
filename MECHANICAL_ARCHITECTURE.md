@@ -54,3 +54,4 @@ Rather than utilizing a power-hungry, high-thermal-inertia halogen lamp inside a
 
 ### Stage 7: Drum Cleaning
 After transfer, a small fraction of toner remains on the drum surface. A sharp polyurethane cleaning blade scrapes this residual toner off the rotating drum, depositing it into the internal waste hopper within the EP-22 cartridge. The drum then rotates back under the PCR to begin the cycle again.
+

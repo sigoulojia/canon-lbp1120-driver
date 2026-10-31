@@ -78,3 +78,4 @@ Polygon Facet Enters Scan Window
 2. **Left Margin Window:** The ASIC's hardware counter holds video output inactive for exactly `112` dot clocks ($\approx 2.95\ \mu\text{s}$), creating a crisp, unprinted $4.74\text{ mm}$ physical margin.
 3. **Active Video Scanline:** Over the subsequent $125\ \mu\text{s}$, 4,736 pixels (592 bytes) are modulated onto `/VDO`.
 4. **Scanline Dead Time:** Over the remaining $\approx 757\ \mu\text{s}$ of the scanline period, the laser is extinguished as the polygon facet rotates to the next mirror facet.
+

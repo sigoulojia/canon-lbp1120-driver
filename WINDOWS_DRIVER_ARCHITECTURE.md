@@ -109,3 +109,4 @@ The repository includes a modern management dashboard built with React, Vite, Ta
 - **Halftone Lab Tab (`HalftoneLabTab.tsx`):** Interactive comparison studio for testing all 9 monochrome halftoning algorithms on imported images with real-time visual zoom.
 - **Protocol RE Lab Tab (`ProtocolReLabTab.tsx`):** Live CAPT packet inspector displaying opcodes, payloads, hex dumps, and roundtrip latency.
 - **Architecture & Drivers Tab (`ArchitectureDriversTab.tsx`):** Interactive system sitemap, board diagrams, and driver installation controls.
+

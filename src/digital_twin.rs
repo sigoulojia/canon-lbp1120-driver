@@ -202,6 +202,17 @@ impl VirtualCaptDevice {
 
         match pkt.header.opcode {
             OPCODE_PCR_GET_BASIC_STATUS => {
+                // Protocol Invariant: Querying status while SCoA decompression gate is active
+                // corrupts video FIFO DMA and stalls Bulk OUT Pipe 0x01 (Win32 Error 121/995).
+                if self.streaming_active {
+                    self.error_latched = true;
+                    self.sync_registers();
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Protocol Violation: Status query (0xE0A0) sent during active video streaming. ASIC FIFO stalled.",
+                    ));
+                }
+
                 // 0xE0A0: Returns 6-byte Basic Status packet
                 let mut resp = Vec::with_capacity(6);
                 resp.extend_from_slice(&OPCODE_PCR_GET_BASIC_STATUS.to_le_bytes());
@@ -211,6 +222,15 @@ impl VirtualCaptDevice {
                 Ok(Some(resp))
             }
             OPCODE_PC_GET_EXTENDED_STATUS => {
+                if self.streaming_active {
+                    self.error_latched = true;
+                    self.sync_registers();
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Protocol Violation: Extended status query (0xA0A0) sent during active video streaming. ASIC FIFO stalled.",
+                    ));
+                }
+
                 // 0xA0A0: Returns 20-byte Extended Status packet
                 let mut resp = Vec::with_capacity(20);
                 resp.extend_from_slice(&OPCODE_PC_GET_EXTENDED_STATUS.to_le_bytes());
@@ -566,5 +586,56 @@ mod tests {
 
         // Verify page counter incremented
         assert_eq!(device.registers.printed_pages, 1);
+    }
+
+    #[test]
+    fn test_status_query_during_video_streaming_causes_stall() {
+        let mut device = VirtualCaptDevice::new();
+
+        // 1. PCR_GO_ONLINE
+        let mut go_online_payload = Vec::new();
+        go_online_payload.extend_from_slice(&MAGIC_GO_ONLINE.to_le_bytes());
+        go_online_payload.extend_from_slice(&0u16.to_le_bytes());
+        go_online_payload.extend_from_slice(&0u16.to_le_bytes());
+        let go_online_pkt = CaptPacket::new(OPCODE_PCR_GO_ONLINE, go_online_payload).unwrap();
+        let mut pkt_bytes = Vec::new();
+        go_online_pkt.write(&mut pkt_bytes).unwrap();
+        let _ = device.handle_bulk_write(&pkt_bytes).unwrap();
+
+        // 2. IC_BEGIN_PAGE
+        let config = PageHeaderConfig {
+            target_model: TARGET_MODEL_LBP1120,
+            image_line_size: 592,
+            image_lines: 16,
+            ..Default::default()
+        };
+        let begin_page =
+            CaptPacket::new(OPCODE_IC_BEGIN_PAGE, config.build_begin_page_payload()).unwrap();
+        pkt_bytes.clear();
+        begin_page.write(&mut pkt_bytes).unwrap();
+        let _ = device.handle_bulk_write(&pkt_bytes).unwrap();
+
+        // 3. IC_BEGIN_DATA (Opens streaming mode)
+        let begin_data = CaptPacket::new(OPCODE_IC_BEGIN_DATA, Vec::new()).unwrap();
+        pkt_bytes.clear();
+        begin_data.write(&mut pkt_bytes).unwrap();
+        let _ = device.handle_bulk_write(&pkt_bytes).unwrap();
+        assert!(device.streaming_active);
+
+        // 4. Attempt status query during active streaming (regression for Error 121/995)
+        let query_status = CaptPacket::new(OPCODE_PCR_GET_BASIC_STATUS, Vec::new()).unwrap();
+        pkt_bytes.clear();
+        query_status.write(&mut pkt_bytes).unwrap();
+
+        let result = device.handle_bulk_write(&pkt_bytes);
+        assert!(
+            result.is_err(),
+            "Digital Twin must reject status queries during active video streaming"
+        );
+        assert_ne!(
+            device.registers.basic & 0x80,
+            0,
+            "Device Error flag must latch on stream desynchronization"
+        );
     }
 }

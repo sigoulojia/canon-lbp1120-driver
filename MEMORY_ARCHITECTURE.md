@@ -124,3 +124,4 @@ At 600 $\times$ 600 DPI on canonical A4 paper ($210\text{ mm} \times 297\text{ m
 - **SCoA Compression Ratio:**
   $$\text{Text Document}: \approx 109\text{ KB} \implies \text{Compression Ratio} \approx 36.7:1\text{ (97.3\% reduction)}$$
   $$\text{Complex Photograph}: \approx 210\text{ KB} \implies \text{Compression Ratio} \approx 19.1:1\text{ (94.8\% reduction)}$$
+

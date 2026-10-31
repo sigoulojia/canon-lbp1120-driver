@@ -98,3 +98,4 @@ The video interface is strictly real-time and cannot be paused once paper pickup
   - Destination: Laser diode cathode/drive circuit on Laser/Scanner PCB.
   - Bit Rate: $\approx 37.88\text{ MHz}$ ($26.4\text{ ns}$ per dot).
   - Modulation: A binary `1` turns on the laser diode, discharging the drum surface to $-100\text{V}$; a binary `0` leaves the laser off, retaining the full $-600\text{V}$ drum charge.
+

@@ -24,12 +24,12 @@
           "reference": "IC1",
           "board": "Interface Controller PCB",
           "manufacturer": "Canon Inc.",
-          "part_number": "NH4-5014-000 / Canon Custom ASIC",
+          "part_number": "Canon Custom Formatter ASIC (IC1 on RG1-4305-000)",
           "package": "QFP-128 / QFP-160",
           "function": "Raster Timing, SCoA Hardware Decompression, AIR Smoothing, DRAM Memory Controller",
           "electrical": { "voltage_v": 3.3, "clock_mhz": 48.0 },
-          "confidence": "Officially Documented / Reverse-Engineered",
-          "evidence": "Canon LBP-1120 Service Manual Section 2.1; SCoA hardware decoding semantics"
+          "confidence": "Function Documented & Verified; Silicon Part Number Requires Visual Inspection",
+          "evidence": "Canon LBP-1120 Service Manual Section 2.1; SCoA hardware decoding semantics (Note: 'NH4-5014' was disproven)"
         },
         {
           "reference": "IC2",
@@ -105,11 +105,11 @@
           "reference": "IC201",
           "board": "Engine Controller PCB",
           "manufacturer": "Hitachi / Renesas",
-          "part_number": "HD6433292 / HD6473294 (H8/300 Architecture)",
+          "part_number": "Hitachi H8/300 Family Architecture (HD643xxxx Mask ROM)",
           "package": "QFP-80",
           "function": "Engine Sequence Microcontroller (Electrophotographic Cycle, Motor Speed Control, Fuser PID)",
           "electrical": { "voltage_v": 3.3, "clock_mhz": 16.0, "rom_kb": 64, "ram_kb": 2 },
-          "confidence": "Officially Documented / Verified by Datasheet",
+          "confidence": "Function Documented (8-bit CPU with ROM/RAM); Part Number Inferred from P160 Lineage",
           "evidence": "Canon LBP-1120 Service Manual Section 2.2; Hitachi H8/300 family programming manual"
         },
         {
@@ -239,3 +239,4 @@
     }
   ]
 }
+

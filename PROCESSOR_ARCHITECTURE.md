@@ -132,3 +132,4 @@ The USB processor executes a **tight event loop** monitoring the USB Serial Inte
 2. The packet header is decoded (first 4 bytes: `opcode` + `total_size`).
 3. If the opcode is a control command (`0xE0xx` or `0xA0xx`), it routes the request directly to the serial command interface (`/SC`) to the engine MCU or reads the internal status latch, queuing the response onto Bulk IN (0x82).
 4. If the opcode is `0xC0A0` (`IC_VIDEO_DATA`), the payload is streamed directly into the DRAM ring FIFO without intermediate CPU re-copying, enabling throughput exceeding 8 Mbps.
+

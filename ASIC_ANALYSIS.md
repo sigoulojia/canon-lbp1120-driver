@@ -124,3 +124,4 @@ Real-time video timing is strictly slave to the physical rotating polygon mirror
 3. The ASIC's internal hardware counter starts counting dot clock cycles ($\approx 37.88\text{ MHz}$ for 600 DPI @ 10 PPM).
 4. After a programmable delay defined by `margin_left` (default `112` dot clocks $\approx 4.74\text{ mm}$ of physical paper margin), the ASIC begins shifting out the decompressed bits of scanline $N$ from its internal shift register onto `/VDO`.
 5. The laser diode emits light for `1` bits (toner attracts to exposed areas on the photoconductive drum) and turns off for `0` bits (white paper background).
+

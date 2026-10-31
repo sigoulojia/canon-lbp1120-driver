@@ -93,3 +93,4 @@ The 8-bit continuous-tone grayscale raster is converted to a 1-bit monochrome bi
 - **`IC_BEGIN_DATA` (`0xD0A1`, 4B):** Instructs the Formatter ASIC to prepare its hardware decompressor.
 - **`IC_VIDEO_DATA` (`0xC0A0`, 4,100B):** Streams the compressed SCoA bytes in 4,096-byte payload frames over Bulk OUT (0x01).
 - **`IC_END_PAGE` (`0xD0A2`, 4B):** Concludes the page stream and signals the engine controller to energize the pickup solenoid.
+

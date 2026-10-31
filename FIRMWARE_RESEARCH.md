@@ -95,3 +95,4 @@ The vendor DLL also confirms the exact magic constant required to place the engi
 - Opcode: `0xE0A5` (`PCR_GO_ONLINE`).
 - Payload: `0xADEADBEE` (4 bytes little-endian) followed by 16-bit page number and 16-bit zero.
 - Any other value results in an immediate engine error (`CAPT_FL_BUSY`).
+

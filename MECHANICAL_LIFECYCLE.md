@@ -62,3 +62,4 @@ flowchart LR
 - The polygon scanner motor spins down.
 - The printed page hardware counter is incremented in extended status.
 - The engine enters healthy Standby, ready for the next job.
+

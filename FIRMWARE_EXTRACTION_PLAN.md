@@ -87,3 +87,4 @@ This method is 100% non-invasive and provides comprehensive insight into the int
    - Cross-check against our native Rust driver telemetry.
 3. **Automated Roundtrip Fuzzing & Regression:**
    - Run our 64 unit tests validating the decoded behavior against synthetic edge cases.
+

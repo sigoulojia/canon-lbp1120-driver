@@ -105,3 +105,4 @@ All experimental data was collected on physical Canon LaserShot LBP-1120 hardwar
    - Transmitted via `IC_BEGIN_PAGE` $\rightarrow$ `IC_BEGIN_DATA` $\rightarrow$ `IC_VIDEO_DATA` $\rightarrow$ `IC_END_PAGE`.
    - Engine mechanically picked up page, charged drum, exposed laser raster, developed toner, fused page through ceramic heater, and ejected to delivery tray.
    - Hardware printed page counter incremented from `0` to `1`.
+

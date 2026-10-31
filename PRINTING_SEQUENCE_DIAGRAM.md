@@ -59,3 +59,4 @@ sequenceDiagram
     Host->>BulkOut: Send 0xE0A6 (PCR_GO_OFFLINE, 4B)
     BulkIn-->>Host: Reply 6B: basic=0x10 (Offline returned)
 ```
+

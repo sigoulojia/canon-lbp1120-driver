@@ -95,3 +95,4 @@ Upon receipt of `IC_END_PAGE` (`0xD0A2`):
 2. The virtual pickup solenoid is triggered.
 3. The mechanical simulation transitions through printing and post-rotation.
 4. The decoded virtual page can be exported to disk as a bit-exact PBM image (`simulated_output.pbm`) for automated visual regression verification.
+

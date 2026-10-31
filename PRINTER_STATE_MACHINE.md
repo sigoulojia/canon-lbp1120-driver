@@ -71,3 +71,4 @@ stateDiagram-v2
 | **`ElectrophotographicTransit`** | `0xA0A0` (at 500 ms) | `0xD0A0`, `0xC0A0` | `0x81` (`basic & 0x01` / `0x80`) | Paper moves through pickup, drum, and fuser (~4.5 seconds). |
 | **`CooldownPostRotation`** | `0xA0A0`, `0xE0A0` | `0xD0A0` | `0x80` (`CAPT_FL_BUSY`) | Engine runs post-rotation for ~15–20 seconds to clear fuser heat. |
 | **`PaperJamHalt`** | `0xE0A3`, `0xE0A2`, `0xE0A1` | `0xE0A5`, `0xD0A0` | `0x80` (`CAPT_FL_BUSY`) | Requires manual clearing, cover opening/closing, and `CLEAR_MISPRINT`. |
+

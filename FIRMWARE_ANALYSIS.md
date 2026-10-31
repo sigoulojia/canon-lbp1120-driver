@@ -89,3 +89,4 @@ Using our extraction tool, the audio files were recovered and verified:
 - `Cap3err.wav` (Printer error occurred).
 
 These authentic assets are embedded directly into our Rust binary (`src/sound.rs`) and trigger in real time based on hardware status events.
+

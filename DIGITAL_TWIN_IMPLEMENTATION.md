@@ -60,3 +60,4 @@ The digital twin includes dedicated test cases verifying:
 1. Standard page lifecycle from Online reservation through SCoA streaming to page ejection.
 2. Interruption handling: Rejecting print jobs when the virtual paper tray is empty or top cover is open.
 3. Reconstruction fidelity: Verifying that synthetic vector patterns rendered to PDF and transmitted to the virtual device decode into a 100% bit-exact match of the original bitmap.
+

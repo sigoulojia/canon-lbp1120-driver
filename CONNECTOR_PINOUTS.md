@@ -83,3 +83,4 @@
 | **5, 6** | `PS202_SIG` / `GND` | Paper In-Tray Empty Sensor photointerrupter emitter/detector lines. |
 | **7, 8** | `SW301_INT` / `+24V` | Top Cover Interlock microswitch safety loop. |
 | **9, 10** | `TONER_SENSE` / `GND` | Toner level capacitive antenna sensing rod inside cartridge bay. |
+

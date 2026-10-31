@@ -105,3 +105,4 @@ Device Response Packet (20 Bytes from Bulk IN 0x82):
 [start_pages]                 --> u8 Started pages counter (Byte 15)
 [tail_bytes]                  --> 4 bytes reserved (Bytes 16..19)
 ```
+
