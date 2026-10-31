@@ -40,8 +40,8 @@ if (Test-Path $releaseExe) {
 }
 
 Write-Host "`n[Suite 2: Installer Compilation & Executable Checks]" -ForegroundColor Yellow
-$installerExe = Join-Path $ProjectRoot "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe"
-Assert-Condition "Inno Setup compiled installer exists" (Test-Path $installerExe) "File not found at $installerExe"
+$installerExe = (Get-ChildItem -Path (Join-Path $ProjectRoot "installer") -Filter "CanonLBP1120_Setup_*_x64.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+Assert-Condition "Inno Setup compiled installer exists" ($installerExe -and (Test-Path $installerExe)) "No installer found in installer\ directory"
 
 if (Test-Path $installerExe) {
     $instItem = Get-Item $installerExe

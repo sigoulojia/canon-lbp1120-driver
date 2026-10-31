@@ -180,7 +180,7 @@ pub fn install_windows_service() -> Result<(), Box<dyn std::error::Error>> {
         .args(["stop", SERVICE_NAME_STR])
         .creation_flags(0x08000000)
         .output();
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(800));
 
     println!("[2/4] Registering Windows Service '{}'...", SERVICE_NAME_STR);
     // Delete previous definition if exists
@@ -188,7 +188,7 @@ pub fn install_windows_service() -> Result<(), Box<dyn std::error::Error>> {
         .args(["delete", SERVICE_NAME_STR])
         .creation_flags(0x08000000)
         .output();
-    std::thread::sleep(Duration::from_millis(300));
+    std::thread::sleep(Duration::from_millis(500));
 
     // Create service
     let create_status = Command::new("sc.exe")
@@ -204,8 +204,10 @@ pub fn install_windows_service() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
 
     if !create_status.status.success() {
-        let err = String::from_utf8_lossy(&create_status.stderr);
-        return Err(format!("Failed to create Windows service: {}", err).into());
+        let stdout_msg = String::from_utf8_lossy(&create_status.stdout);
+        let stderr_msg = String::from_utf8_lossy(&create_status.stderr);
+        let combined = format!("{}\n{}", stdout_msg.trim(), stderr_msg.trim());
+        return Err(format!("Failed to create Windows service: {}", combined.trim()).into());
     }
 
     // Set description
@@ -230,18 +232,38 @@ pub fn install_windows_service() -> Result<(), Box<dyn std::error::Error>> {
         .creation_flags(0x08000000)
         .output();
 
-    println!("[4/4] Starting service '{}'...", SERVICE_NAME_STR);
-    let start_status = Command::new("sc.exe")
+    println!("[4/4] Starting service '{}' and waiting for RUNNING state...", SERVICE_NAME_STR);
+    let _ = Command::new("sc.exe")
         .args(["start", SERVICE_NAME_STR])
         .creation_flags(0x08000000)
-        .output()?;
+        .output();
 
-    if start_status.status.success() {
-        println!("Service started successfully!");
-    } else {
-        println!("Service registered with auto-start; will start on next boot or via 'sc start'.");
+    // Poll service status until RUNNING (up to 10 seconds)
+    let mut running = false;
+    let mut last_status = String::new();
+    for _ in 0..20 {
+        std::thread::sleep(Duration::from_millis(500));
+        let query_status = Command::new("sc.exe")
+            .args(["query", SERVICE_NAME_STR])
+            .creation_flags(0x08000000)
+            .output();
+        if let Ok(out) = query_status {
+            last_status = String::from_utf8_lossy(&out.stdout).to_string();
+            if last_status.contains("RUNNING") || last_status.contains(" 4 ") {
+                running = true;
+                break;
+            }
+        }
     }
 
+    if !running {
+        return Err(format!(
+            "Service failed to reach RUNNING state within 10 seconds.\nLast query output:\n{}",
+            last_status.trim()
+        ).into());
+    }
+
+    println!("Service started and confirmed in RUNNING state!");
     println!("\nService Configuration Summary:");
     println!("  Service Name : {}", SERVICE_NAME_STR);
     println!("  Display Name : {}", SERVICE_DISPLAY_NAME_STR);
@@ -250,6 +272,109 @@ pub fn install_windows_service() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Account      : NT AUTHORITY\\LocalSystem");
     println!("  Log File     : {}", get_service_log_path().display());
     Ok(())
+}
+
+/// Verifies that all installation requirements are satisfied and active on the machine
+pub fn verify_installation() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=======================================================");
+    println!("   CANON LBP-1120 POST-INSTALLATION VERIFICATION AUDIT ");
+    println!("=======================================================");
+
+    use std::net::TcpStream;
+
+    // 1. Verify executable exists
+    let current_exe = env::current_exe()?;
+    println!("[1/5] Verifying Service Executable Binary...");
+    if !current_exe.exists() {
+        return Err(format!("Executable binary missing: {}", current_exe.display()).into());
+    }
+    println!("      Found binary: {}", current_exe.display());
+
+    // 2. Verify Windows SCM Service is Running
+    println!("[2/5] Verifying Windows Service Status ('{}')...", SERVICE_NAME_STR);
+    let query_out = Command::new("sc.exe")
+        .args(["query", SERVICE_NAME_STR])
+        .creation_flags(0x08000000)
+        .output()?;
+    let query_str = String::from_utf8_lossy(&query_out.stdout);
+    if !query_str.contains("RUNNING") && !query_str.contains(" 4 ") {
+        return Err(format!(
+            "Windows Service '{}' is not RUNNING!\nSC Query Output:\n{}",
+            SERVICE_NAME_STR, query_str.trim()
+        ).into());
+    }
+    println!("      Windows Service '{}' is active and RUNNING.", SERVICE_NAME_STR);
+
+    // 3. Verify Printer Ports
+    println!("[3/5] Verifying Printer Ports ('CanonLBP1120_Normal' & 'CanonLBP1120_Photo')...");
+    let port_cmd = "$ErrorActionPreference = 'Stop'; if (-not (Get-PrinterPort -Name 'CanonLBP1120_Normal' -ErrorAction SilentlyContinue)) { throw 'Normal port missing' }; if (-not (Get-PrinterPort -Name 'CanonLBP1120_Photo' -ErrorAction SilentlyContinue)) { throw 'Photo port missing' }";
+    let port_out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", port_cmd])
+        .creation_flags(0x08000000)
+        .output()?;
+    if !port_out.status.success() {
+        let err = String::from_utf8_lossy(&port_out.stderr);
+        return Err(format!("Printer ports verification failed: {}", err.trim()).into());
+    }
+    println!("      Both printer ports are configured.");
+
+    // 4. Verify Printer Queues
+    println!("[4/5] Verifying Printer Queues ('Canon LaserShot LBP-1120' & Photo)...");
+    let queue_cmd = "$ErrorActionPreference = 'Stop'; if (-not (Get-Printer -Name 'Canon LaserShot LBP-1120' -ErrorAction SilentlyContinue)) { throw 'Normal printer queue missing' }; if (-not (Get-Printer -Name 'Canon LaserShot LBP-1120 (Photo)' -ErrorAction SilentlyContinue)) { throw 'Photo printer queue missing' }";
+    let queue_out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", queue_cmd])
+        .creation_flags(0x08000000)
+        .output()?;
+    if !queue_out.status.success() {
+        let err = String::from_utf8_lossy(&queue_out.stderr);
+        return Err(format!("Printer queue verification failed: {}", err.trim()).into());
+    }
+    println!("      Both Windows printer queues are registered.");
+
+    // 5. Verify TCP Socket Listeners on 127.0.0.1:9100 and 127.0.0.1:9101
+    println!("[5/5] Verifying TCP Spool Listeners (Ports 9100 & 9101)...");
+    let mut tcp_ok = false;
+    for _ in 0..10 {
+        let conn9100 = TcpStream::connect_timeout(
+            &"127.0.0.1:9100".parse().unwrap(),
+            Duration::from_millis(500),
+        );
+        let conn9101 = TcpStream::connect_timeout(
+            &"127.0.0.1:9101".parse().unwrap(),
+            Duration::from_millis(500),
+        );
+        if conn9100.is_ok() && conn9101.is_ok() {
+            tcp_ok = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    if !tcp_ok {
+        return Err("TCP listeners on 127.0.0.1:9100 or 127.0.0.1:9101 are not responding.".into());
+    }
+    println!("      TCP listeners on 127.0.0.1:9100 & 9101 are active and accepting connections.");
+
+    println!("\n>>> ALL POST-INSTALLATION VERIFICATION CHECKS PASSED (5/5) <<<");
+    Ok(())
+}
+
+/// Checks whether an operational WinUSB driver is already bound to the Canon LBP-1120
+pub fn check_usb_driver() -> i32 {
+    let check_cmd = "$dev = Get-PnpDevice -InstanceId 'USB\\VID_04A9&PID_262B*' -ErrorAction SilentlyContinue | Select-Object -First 1; if ($dev -and $dev.Service -eq 'WinUSB' -and $dev.Status -eq 'OK') { exit 0 } else { exit 2 }";
+    let out = Command::new("powershell")
+        .args(["-NoProfile", "-Command", check_cmd])
+        .creation_flags(0x08000000)
+        .output();
+    match out {
+        Ok(output) => {
+            if output.status.code() == Some(0) {
+                0 // Driver is operational
+            } else {
+                2 // Needs staging
+            }
+        }
+        Err(_) => 2,
+    }
 }
 
 /// Stops and unregisters the Windows Service

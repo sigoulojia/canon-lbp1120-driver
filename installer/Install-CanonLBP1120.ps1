@@ -19,8 +19,17 @@ Write-Host "=======================================================" -Foreground
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 $ReleaseExe = Join-Path $ProjectRoot "target\release\capt-poc.exe"
+if (-not (Test-Path $ReleaseExe) -and (Test-Path (Join-Path $ScriptDir "canon-lbp1120-service.exe"))) {
+    $ReleaseExe = Join-Path $ScriptDir "canon-lbp1120-service.exe"
+}
 $WavArchive = Join-Path $ProjectRoot "reference\drivers\LBP1120_WinXP\CAP3ZWAV.BIN"
-$InfFile = Join-Path $ScriptDir "CanonLBP1120_WinUSB.inf"
+if (-not (Test-Path $WavArchive) -and (Test-Path (Join-Path $ScriptDir "CAP3ZWAV.BIN"))) {
+    $WavArchive = Join-Path $ScriptDir "CAP3ZWAV.BIN"
+}
+$InfFile = Join-Path $ScriptDir "driver\CanonLBP1120_WinUSB.inf"
+if (-not (Test-Path $InfFile)) {
+    $InfFile = Join-Path $ScriptDir "CanonLBP1120_WinUSB.inf"
+}
 
 if (-not (Test-Path $ReleaseExe)) {
     throw "Release binary not found at '$ReleaseExe'. Run 'cargo build --release' first."
@@ -71,23 +80,32 @@ if (-not $TestStagingOnly) {
     Write-Host "[3/6] Staging WinUSB device driver package..." -ForegroundColor Yellow
     $InstalledInf = Join-Path $TargetDir "driver\CanonLBP1120_WinUSB.inf"
     if (Test-Path $InstalledInf) {
-        try {
-            & pnputil.exe /add-driver "$InstalledInf" /install | Out-Null
-            Write-Host "      WinUSB driver staged successfully." -ForegroundColor Green
-        } catch {
-            Write-Warning "PnPUtil notice: $($_.Exception.Message)"
+        $dev = Get-PnpDevice -InstanceId 'USB\VID_04A9&PID_262B*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($dev -and $dev.Service -eq 'WinUSB' -and $dev.Status -eq 'OK') {
+            Write-Host "      Existing operational WinUSB driver binding detected ($($dev.Service)). Preserving driver." -ForegroundColor Green
+        } else {
+            try {
+                & pnputil.exe /add-driver "$InstalledInf" /install | Out-Null
+                Write-Host "      WinUSB driver staged successfully." -ForegroundColor Green
+            } catch {
+                Write-Warning "PnPUtil notice: $($_.Exception.Message)"
+            }
         }
     }
 
     # 5. Configure dual Windows printer queues and TCP ports
     Write-Host "[4/6] Registering printer queues & TCP RAW ports..." -ForegroundColor Yellow
-    & "$DestExe" install | Out-Null
+    & "$DestExe" install
     Write-Host "      Dual queues ('Canon LaserShot LBP-1120' & Photo) registered." -ForegroundColor Green
 
     # 6. Register & start native SCM Windows Service
     Write-Host "[5/6] Registering & starting Windows Service 'CanonLBP1120Service'..." -ForegroundColor Yellow
     & "$DestExe" install-service
     Start-Sleep -Seconds 1
+
+    # Verify installation
+    Write-Host "      Running verification audit..." -ForegroundColor Yellow
+    & "$DestExe" verify-installation
 
     # 7. Create Start Menu Shortcuts
     Write-Host "[6/6] Creating Start Menu shortcuts..." -ForegroundColor Yellow

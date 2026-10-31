@@ -101,14 +101,13 @@ jobs:
 
       - name: Verify Compiled Installer Artifact
         run: |
-          $installer = "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe"
-          if (-not (Test-Path $installer)) {
-            throw "Expected installer $installer was not generated!"
+          $installer = (Get-ChildItem -Path "installer" -Filter "CanonLBP1120_Setup_*_x64.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+          if (-not $installer) {
+            throw "Expected installer was not generated in installer\!"
           }
-          $item = Get-Item $installer
-          Write-Host "Successfully verified installer: $($item.FullName) ($($item.Length) bytes)"
-          if ($item.Length -lt 500000) {
-            throw "Installer file size suspiciously small: $($item.Length) bytes"
+          Write-Host "Successfully verified installer: $($installer.FullName) ($($installer.Length) bytes)"
+          if ($installer.Length -lt 500000) {
+            throw "Installer file size suspiciously small: $($installer.Length) bytes"
           }
 
       - name: Run Automated Release Integrity & Security Test Suite
@@ -117,14 +116,14 @@ jobs:
 
       - name: Generate SHA256 Checksums
         run: |
-          $installer = "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe"
+          $installer = (Get-ChildItem -Path "installer" -Filter "CanonLBP1120_Setup_*_x64.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
           $service = "dist\CanonLBP1120\canon-lbp1120-service.exe"
           
-          $hashInstaller = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+          $hashInstaller = (Get-FileHash -Path $installer.FullName -Algorithm SHA256).Hash.ToLower()
           $hashService = (Get-FileHash -Path $service -Algorithm SHA256).Hash.ToLower()
           
           $checksums = @"
-          $hashInstaller  CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
+          $hashInstaller  $($installer.Name)
           $hashService  canon-lbp1120-service.exe
           "@
           
@@ -135,7 +134,8 @@ jobs:
       - name: Stage Release Package Directory
         run: |
           New-Item -ItemType Directory -Force -Path "release-staging" | Out-Null
-          Copy-Item "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe" -Destination "release-staging\" -Force
+          $installer = (Get-ChildItem -Path "installer" -Filter "CanonLBP1120_Setup_*_x64.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+          Copy-Item $installer.FullName -Destination "release-staging\" -Force
           Copy-Item "dist\CanonLBP1120\canon-lbp1120-service.exe" -Destination "release-staging\" -Force
           Copy-Item "SHA256SUMS.txt" -Destination "release-staging\" -Force
           Copy-Item "RELEASE_NOTES.md" -Destination "release-staging\" -Force
@@ -149,7 +149,7 @@ jobs:
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CanonLBP1120-Installer-v1.0.0-rc.1
+          name: CanonLBP1120-Package
           path: release-staging/*
           if-no-files-found: error
 
@@ -167,7 +167,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: CanonLBP1120-Installer-v1.0.0-rc.1
+          name: CanonLBP1120-Package
           path: release-artifacts
 
       - name: Publish Official GitHub Prerelease

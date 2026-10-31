@@ -792,6 +792,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "uninstall-service" => {
             service::uninstall_windows_service()?;
         }
+        "verify-installation" => {
+            service::verify_installation()?;
+        }
+        "check-usb-driver" => {
+            let code = service::check_usb_driver();
+            std::process::exit(code);
+        }
         "spool-server" => {
             spool::run_pipe_server(false)?;
         }

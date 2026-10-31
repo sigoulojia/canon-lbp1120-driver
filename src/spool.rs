@@ -1297,81 +1297,100 @@ pub fn install_printer() -> Result<(), Box<dyn Error>> {
     println!("   CANON LBP-1120 NATIVE DUAL-DRIVER INSTALLER        ");
     println!("=======================================================");
 
-    let exe_path = env::current_exe()?.to_string_lossy().replace(r"\\?\", "");
-
     use std::os::windows::process::CommandExt;
 
     // 1. Create Normal TCP and Named Pipe printer ports
     println!(
-        "[1/6] Registering Normal printer ports (TCP '{}' & Pipe '{}')...",
+        "[1/4] Registering Normal printer ports (TCP '{}' & Pipe '{}')...",
         TCP_PORT_NAME_NORMAL, PIPE_NAME_NORMAL
     );
     let port1_cmd = format!(
-        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
+        "$ErrorActionPreference = 'Stop'; if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
         TCP_PORT_NAME_NORMAL, TCP_PORT_NORMAL, PIPE_NAME_NORMAL
     );
-    let _ = Command::new("powershell")
+    let out1 = Command::new("powershell")
         .args(["-NoProfile", "-Command", &port1_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
+        .output()?;
+    if !out1.status.success() {
+        let err = String::from_utf8_lossy(&out1.stderr);
+        return Err(format!("Failed to register Normal printer ports: {}", err.trim()).into());
+    }
 
-    // 2. Add/Configure Normal Printer attached to TCP port
-    println!("[2/6] Registering '{}' in Windows...", PRINTER_NAME_NORMAL);
-    let print1_cmd = format!(
-        "$p = Get-Printer -Name '{0}' -ErrorAction SilentlyContinue; if (-not $p) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }} else {{ Set-Printer -Name '{0}' -PortName '{1}' }}",
-        PRINTER_NAME_NORMAL, TCP_PORT_NAME_NORMAL
-    );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &print1_cmd])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
-
-    // 3. Create Photo TCP and Named Pipe printer ports
+    // 2. Create Photo TCP and Named Pipe printer ports
     println!(
-        "[3/6] Registering Photo printer ports (TCP '{}' & Pipe '{}')...",
+        "[2/4] Registering Photo printer ports (TCP '{}' & Pipe '{}')...",
         TCP_PORT_NAME_PHOTO, PIPE_NAME_PHOTO
     );
     let port2_cmd = format!(
-        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
+        "$ErrorActionPreference = 'Stop'; if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
         TCP_PORT_NAME_PHOTO, TCP_PORT_PHOTO, PIPE_NAME_PHOTO
     );
-    let _ = Command::new("powershell")
+    let out2 = Command::new("powershell")
         .args(["-NoProfile", "-Command", &port2_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
+        .output()?;
+    if !out2.status.success() {
+        let err = String::from_utf8_lossy(&out2.stderr);
+        return Err(format!("Failed to register Photo printer ports: {}", err.trim()).into());
+    }
 
-    // 4. Add/Configure Photo Printer attached to TCP port
-    println!("[4/6] Registering '{}' in Windows...", PRINTER_NAME_PHOTO);
-    let print2_cmd = format!(
-        "$p = Get-Printer -Name '{0}' -ErrorAction SilentlyContinue; if (-not $p) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }} else {{ Set-Printer -Name '{0}' -PortName '{1}' }}",
-        PRINTER_NAME_PHOTO, TCP_PORT_NAME_PHOTO
-    );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &print2_cmd])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
+    // 3. Register Normal and Photo Printer Queues with auto-detected driver
+    println!("[3/4] Registering '{}' & '{}' in Windows...", PRINTER_NAME_NORMAL, PRINTER_NAME_PHOTO);
+    let register_queues_cmd = format!(
+        r#"$ErrorActionPreference = 'Stop'
+$drivers = Get-PrinterDriver | Select-Object -ExpandProperty Name
+$targetDriver = $drivers | Where-Object {{ $_ -like '*PDF*' }} | Select-Object -First 1
+if (-not $targetDriver) {{
+    $targetDriver = $drivers | Where-Object {{ $_ -like '*Generic*' }} | Select-Object -First 1
+}}
+if (-not $targetDriver) {{
+    $targetDriver = $drivers | Where-Object {{ $_ -like '*Virtual*' }} | Select-Object -First 1
+}}
+if (-not $targetDriver) {{
+    $targetDriver = 'Generic / Text Only'
+}}
+Write-Host "Binding queues with driver: $targetDriver"
 
-    // 5. Register startup entry
-    println!("[5/6] Registering background service in Windows startup...");
-    let reg_cmd = format!(
-        "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'CanonLBP1120' -Value '\"{0}\" service'",
-        exe_path
-    );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &reg_cmd])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
+$p1 = Get-Printer -Name '{0}' -ErrorAction SilentlyContinue
+if (-not $p1) {{
+    Add-Printer -Name '{0}' -DriverName $targetDriver -PortName '{1}'
+}} else {{
+    Set-Printer -Name '{0}' -PortName '{1}'
+}}
 
-    // 6. Launch background service now
-    println!("[6/6] Starting dual-mode background print spool listener...");
-    let launch_cmd = format!(
-        "Start-Process -FilePath '{0}' -ArgumentList 'service' -WindowStyle Hidden",
-        exe_path
+$p2 = Get-Printer -Name '{2}' -ErrorAction SilentlyContinue
+if (-not $p2) {{
+    Add-Printer -Name '{2}' -DriverName $targetDriver -PortName '{3}'
+}} else {{
+    Set-Printer -Name '{2}' -PortName '{3}'
+}}
+"#,
+        PRINTER_NAME_NORMAL, TCP_PORT_NAME_NORMAL, PRINTER_NAME_PHOTO, TCP_PORT_NAME_PHOTO
     );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-Command", &launch_cmd])
+    let out3 = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &register_queues_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output();
+        .output()?;
+    if !out3.status.success() {
+        let err = String::from_utf8_lossy(&out3.stderr);
+        return Err(format!("Failed to register Windows printer queues: {}", err.trim()).into());
+    }
+
+    // 4. Verify Both Printers Exist
+    println!("[4/4] Verifying Windows print queue availability...");
+    let verify_cmd = format!(
+        "$ErrorActionPreference = 'Stop'; if (-not (Get-Printer -Name '{0}' -ErrorAction SilentlyContinue)) {{ throw 'Printer {0} not found' }}; if (-not (Get-Printer -Name '{1}' -ErrorAction SilentlyContinue)) {{ throw 'Printer {1} not found' }}",
+        PRINTER_NAME_NORMAL, PRINTER_NAME_PHOTO
+    );
+    let out4 = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &verify_cmd])
+        .creation_flags(0x08000000)
+        .output()?;
+    if !out4.status.success() {
+        let err = String::from_utf8_lossy(&out4.stderr);
+        return Err(format!("Verification failed for printer queues: {}", err.trim()).into());
+    }
 
     println!("\n>>> DUAL-DRIVER INSTALLATION COMPLETE! <<<");
     println!("1. '{}' (Normal: Text & Documents)", PRINTER_NAME_NORMAL);
@@ -1442,19 +1461,9 @@ pub fn uninstall_printer() -> Result<(), Box<dyn Error>> {
         .creation_flags(0x08000000)
         .output();
 
-    println!("[5/5] Removing startup entry...");
+    println!("[5/5] Cleaning up legacy run keys and background processes...");
     let _ = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'CanonLBP1120' -ErrorAction SilentlyContinue"])
-        .creation_flags(0x08000000)
-        .output();
-
-    // Kill any running service instance
-    let _ = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Get-Process capt-poc -ErrorAction SilentlyContinue | Stop-Process -Force",
-        ])
+        .args(["-NoProfile", "-Command", "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'CanonLBP1120' -ErrorAction SilentlyContinue; Get-Process capt-poc, canon-lbp1120-service -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"])
         .creation_flags(0x08000000)
         .output();
 
