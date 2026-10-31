@@ -753,6 +753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  capt-poc test-pdf <input.pdf> [output.pbm] [normal|photo] - Rasterize PDF to PBM");
         println!("  capt-poc compare-halftone <input.pdf> [page_idx] [prefix] - Compare Normal vs Photo halftone");
         println!("  capt-poc print <input.pbm>                - Print raw PBM file to physical printer");
+        println!("  capt-poc generate-calibration [output.pbm] - Generate full 6-zone optical calibration target");
         println!("  capt-poc generate-a4 [output.pbm]         - Generate test A4 PBM pattern");
         println!("  capt-poc generate-sample <output.pbm>     - Generate sample PBM pattern");
         println!("  capt-poc encode <input.pbm> <output.capt> - Encode PBM to CAPT v1 / SCoA stream");
@@ -939,6 +940,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "print" => {
             let pbm_path = args.get(2).ok_or("Missing PBM file path")?;
             run_print_pbm(pbm_path)?;
+        }
+        "generate-calibration" => {
+            let out_path = args.get(2).map(|s| s.as_str()).unwrap_or("calibration.pbm");
+            println!("Generating 6-zone optical calibration suite (4736x6778 @ 600 DPI)...");
+            let pbm = a4::generate_calibration_page();
+            pbm.write_file(out_path)?;
+            let out_bmp = out_path.replace(".pbm", ".bmp");
+            let _ = pbm.write_bmp(&out_bmp);
+            println!(
+                "Successfully generated calibration targets:\n  - {}\n  - {} ({}x{}, {} bytes)",
+                out_path, out_bmp, pbm.width, pbm.height, pbm.data.len()
+            );
         }
         "generate-a4" => {
             let out_path = args.get(2).map(|s| s.as_str()).unwrap_or("a4_test.pbm");

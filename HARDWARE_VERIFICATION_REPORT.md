@@ -274,3 +274,4 @@ Device Path: \\?\USB#VID_04A9&PID_262B#0353S4cQ#{F9A25620-E255-4B37-93F3-0C3D3D2
 | **Connector J201 1-to-20 Pinout** | 20-conductor FFC standard | Generic Canon diagram | Schematic inference | **INFERRED** | Requires physical continuity tracing. |
 | **EEPROM is exact part `93C46`** | Presence of serial EEPROM | IC4 on board | Protocol observation | **UNVERIFIED** | May be `24C02` (I2C) or `93C46` (Microwire). |
 | **ASIC is Part Number `NH4-5014`** | None (Inherited from 1987 Cat) | Misattributed code | Historical analysis | **DISPROVEN** | Part number does not belong to LBP-1120. |
+

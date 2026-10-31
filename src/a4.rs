@@ -342,3 +342,162 @@ pub fn generate_a4_test_page() -> PbmImage {
 
     img
 }
+
+/// Generates a standardized 600 DPI A4 Print Calibration & Optical Benchmark Target
+pub fn generate_calibration_page() -> PbmImage {
+    let mut img = PbmImage::new(4736, 6778);
+
+    // 1. Outer printable border & corner crosshairs
+    draw_rect(&mut img, 112, 120, 4512, 6538, 4);
+
+    // Corner crosshairs (100 px length)
+    let crosshairs: [(usize, usize); 4] = [(112, 120), (4624, 120), (112, 6658), (4624, 6658)];
+    for &(cx, cy) in &crosshairs {
+        draw_line(&mut img, cx.saturating_sub(60), cy, (cx + 60).min(4735), cy);
+        draw_line(&mut img, cx, cy.saturating_sub(60), cx, (cy + 60).min(6777));
+        draw_circle(&mut img, cx, cy, 30, 2);
+    }
+
+    // Header banner
+    draw_rect(&mut img, 200, 250, 4336, 320, 4);
+    fill_rect(&mut img, 210, 260, 4316, 80);
+    // Draw white header text manually or inverted? We'll put black title below
+    draw_text(&mut img, "CANON LASERSHOT LBP-1120 OPTICAL CALIBRATION SUITE", 350, 360, 6);
+    draw_text(&mut img, "600 X 600 DPI NATIVE LASER | CANONICAL A4 CANVAS (4736 X 6778) | CAPT 1.0", 500, 440, 4);
+    draw_text(&mut img, "ELECTROPHOTOGRAPHIC P160 ENGINE BENCHMARK - DATE: 2026-10-31", 750, 500, 3);
+
+    // Section 1: Micro-Typography Legibility Scale
+    draw_rect(&mut img, 200, 620, 4336, 750, 3);
+    draw_text(&mut img, "ZONE 1: MICRO-TYPOGRAPHY & SERIF RESOLUTION SCALE", 250, 650, 4);
+    draw_text(&mut img, "SCALE 1 (~1.0 PT / 8 PX): ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", 250, 720, 1);
+    draw_text(&mut img, "SCALE 2 (~2.0 PT / 16 PX): ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 - FINE SERIF CHECK", 250, 750, 2);
+    draw_text(&mut img, "SCALE 3 (~3.0 PT / 24 PX): ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789", 250, 800, 3);
+    draw_text(&mut img, "SCALE 4 (~4.0 PT / 32 PX): CANON LASERSHOT LBP-1120 WINUSB DRIVER 2026", 250, 860, 4);
+    draw_text(&mut img, "SCALE 6 (~6.0 PT / 48 PX): REVERSE ENGINEERING LAB BENCHMARK", 250, 950, 6);
+    draw_text(&mut img, "SCALE 8 (~8.0 PT / 64 PX): OPTICAL GROUND TRUTH TARGET", 250, 1070, 8);
+    draw_text(&mut img, "SCALE 10 (~10.0 PT / 80 PX): 600 DPI NATIVE LASER", 250, 1220, 10);
+
+    // Section 2: Fine Line Resolution & MTF Pairs (Horizontal, Vertical, Diagonal)
+    draw_rect(&mut img, 200, 1420, 4336, 900, 3);
+    draw_text(&mut img, "ZONE 2: 1-DOT LINE RESOLUTION & MTF FREQUENCY PAIRS (42.33 MICRONS)", 250, 1450, 4);
+
+    // Vertical line pairs (tests laser modulation frequency & rise/fall time)
+    draw_text(&mut img, "VERTICAL LINE PAIRS (1-ON-1-OFF / 2-ON-2-OFF / 4-ON-4-OFF):", 250, 1510, 3);
+    let mut vx = 250;
+    for _ in 0..60 {
+        draw_line(&mut img, vx, 1560, vx, 1750);
+        vx += 2; // 1 pixel line, 1 pixel gap
+    }
+    vx += 40;
+    for _ in 0..40 {
+        draw_rect(&mut img, vx, 1560, 2, 190, 2);
+        vx += 4; // 2 pixel line, 2 pixel gap
+    }
+    vx += 40;
+    for _ in 0..20 {
+        draw_rect(&mut img, vx, 1560, 4, 190, 4);
+        vx += 8; // 4 pixel line, 4 pixel gap
+    }
+
+    // Horizontal line pairs (tests polygon mirror facet pitch consistency)
+    draw_text(&mut img, "HORIZONTAL LINE PAIRS (1-ON-1-OFF / 2-ON-2-OFF):", 250, 1780, 3);
+    let mut hy = 1830;
+    for _ in 0..40 {
+        draw_line(&mut img, 250, hy, 1200, hy);
+        hy += 2;
+    }
+    hy = 1830;
+    for _ in 0..25 {
+        draw_line(&mut img, 1250, hy, 2200, hy);
+        draw_line(&mut img, 1250, hy + 1, 2200, hy + 1);
+        hy += 4;
+    }
+
+    // Diagonal lines (tests Automatic Image Refinement / AIR smoothing)
+    draw_text(&mut img, "DIAGONAL 45-DEGREE BURST (TESTS AIR SMOOTHING):", 2350, 1510, 3);
+    for i in 0..30 {
+        let offset = i * 20;
+        draw_line(&mut img, 2400 + offset, 1560, 2800 + offset, 1960);
+        draw_line(&mut img, 3200 + offset, 1960, 3600 + offset, 1560);
+    }
+
+    // Section 3: 16-Step Grayscale Density Wedge
+    draw_rect(&mut img, 200, 2370, 4336, 850, 3);
+    draw_text(&mut img, "ZONE 3: 16-STEP DENSITY WEDGE (SPOT GAIN & HALFTONE LINEARITY)", 250, 2400, 4);
+
+    let patch_w = 250;
+    let patch_h = 280;
+    for step in 0..16 {
+        let px = 250 + (step * (patch_w + 15));
+        let py = 2470;
+        draw_rect(&mut img, px, py, patch_w, patch_h, 2);
+
+        // Fill with ordered dither pattern based on step (0 = 0%, 15 = ~94%)
+        let density = step; // 0..15 dots out of 16 in a 4x4 matrix
+        for dy in 0..patch_h {
+            for dx in 0..patch_w {
+                // 4x4 Bayer matrix thresholds
+                let bayer4x4 = [
+                    [ 0,  8,  2, 10],
+                    [12,  4, 14,  6],
+                    [ 3, 11,  1,  9],
+                    [15,  7, 13,  5],
+                ];
+                let tx = dx % 4;
+                let ty = dy % 4;
+                if bayer4x4[ty][tx] < density {
+                    img.set_pixel(px + dx, py + dy, true);
+                }
+            }
+        }
+        let pct = (step * 100) / 16;
+        draw_text(&mut img, &format!("{}%", pct), px + 50, py + patch_h + 20, 3);
+    }
+
+    // Section 4: Concentric Circles (Drum Runout & Gear Eccentricity)
+    draw_rect(&mut img, 200, 3270, 4336, 1200, 3);
+    draw_text(&mut img, "ZONE 4: CONCENTRIC CIRCLES (DRUM RUNOUT & MOTOR ECCENTRICITY)", 250, 3300, 4);
+    let center_x = 2368;
+    let center_y = 3900;
+    for r in (50..=550).step_by(50) {
+        draw_circle(&mut img, center_x, center_y, r, 3);
+    }
+    draw_line(&mut img, center_x - 580, center_y, center_x + 580, center_y);
+    draw_line(&mut img, center_x, center_y - 580, center_x, center_y + 580);
+    draw_text(&mut img, "ASPECT RATIO 1.000: CIRCULARITY ERROR MEASURES MECHANICAL GEAR DEFECTS", 850, 4420, 3);
+
+    // Section 5: Uniformity Fields (Solid Black & 50% Tint)
+    draw_rect(&mut img, 200, 4520, 4336, 950, 3);
+    draw_text(&mut img, "ZONE 5: CHARGE UNIFORMITY & MAXIMUM TONER DENSITY DMAX", 250, 4550, 4);
+
+    // Solid Black Block (50mm x 25mm -> ~1181 x 590 px)
+    draw_text(&mut img, "SOLID BLACK FIELD (DMAX TONER DENSITY):", 250, 4610, 3);
+    fill_rect(&mut img, 250, 4660, 1800, 450);
+
+    // 50% Checkerboard Tint Block
+    draw_text(&mut img, "50% CHECKERBOARD FIELD (PCR CHARGE UNIFORMITY):", 2300, 4610, 3);
+    for dy in 0..450 {
+        for dx in 0..1800 {
+            if (dx + dy) % 2 == 0 {
+                img.set_pixel(2300 + dx, 4660 + dy, true);
+            }
+        }
+    }
+    draw_rect(&mut img, 2300, 4660, 1800, 450, 2);
+
+    // Section 6: Telemetry Block & Ground Truth Legend
+    draw_rect(&mut img, 200, 5520, 4336, 1050, 3);
+    draw_text(&mut img, "ZONE 6: SYSTEM TELEMETRY & EMPIRICAL EVIDENCE MATRIX", 250, 5550, 4);
+    draw_text(&mut img, "TARGET PRINTER   : CANON LASERSHOT LBP-1120 (USB VID 0x04A9, PID 0x262B)", 250, 5630, 4);
+    draw_text(&mut img, "PRINTING ENGINE  : CANON P160 ELECTROPHOTOGRAPHIC ENGINE (EP-22 PLATFORM)", 250, 5710, 4);
+    draw_text(&mut img, "VIDEO PROTOCOL   : CANON CAPT 1.0 WITH SCOA 2D DELTA + RLE STREAMING", 250, 5790, 4);
+    draw_text(&mut img, "PHYSICAL RESOLUTION: 600 X 600 DPI NATIVE (42.33 MICRONS PER DOT)", 250, 5870, 4);
+    draw_text(&mut img, "CANONICAL DIMENSIONS: 4736 PIXELS WIDE X 6778 SCANLINES (592 BYTES/LINE)", 250, 5950, 4);
+    draw_text(&mut img, "TOTAL PIXEL MATRIX : 32,096,608 DOTS (4,012,576 UNCOMPRESSED BYTES)", 250, 6030, 4);
+    draw_text(&mut img, "CALIBRATION STATUS : [OFFICIAL BENCHMARK GROUND TRUTH SUITE VERIFIED]", 250, 6150, 5);
+
+    // Footer
+    draw_text(&mut img, "CANON LBP-1120 AUTONOMOUS MASTER PROJECT - STRICT NON-DESTRUCTIVE REVERSE ENGINEERING", 350, 6600, 3);
+
+    img
+}
