@@ -44,11 +44,20 @@ jobs:
       - name: Install Inno Setup 6
         run: |
           choco install innosetup --no-progress
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+          $isccItem = Get-ChildItem -Path "C:\Program Files*\Inno Setup*" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($isccItem) {
+            Write-Host "Found Inno Setup compiler at $($isccItem.FullName)"
+            "$($isccItem.DirectoryName)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            throw "ISCC.exe not found after chocolatey install"
+          }
 
       - name: Verify Inno Setup Compiler
         run: |
-          ISCC.exe /?
+          $iscc = (Get-ChildItem -Path "C:\Program Files*\Inno Setup*" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $iscc) { throw "ISCC.exe compiler not found" }
+          Write-Host "Verifying compiler: $iscc"
+          & $iscc /?
 
       - name: Run Rust Test Suite
         run: cargo test --verbose
@@ -84,7 +93,10 @@ jobs:
 
       - name: Compile Inno Setup Installer
         run: |
-          ISCC.exe "installer\CanonLBP1120_Setup.iss"
+          $iscc = (Get-ChildItem -Path "C:\Program Files*\Inno Setup*" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if (-not $iscc) { throw "ISCC.exe compiler not found for installer compilation" }
+          Write-Host "Compiling installer using $iscc..."
+          & $iscc "installer\CanonLBP1120_Setup.iss"
 
       - name: Verify Compiled Installer Artifact
         run: |
