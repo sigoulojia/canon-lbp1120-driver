@@ -56,8 +56,9 @@ jobs:
         run: |
           $iscc = (Get-ChildItem -Path "C:\Program Files*\Inno Setup*" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
           if (-not $iscc) { throw "ISCC.exe compiler not found" }
-          Write-Host "Verifying compiler: $iscc"
-          & $iscc /?
+          Write-Host "Inno Setup compiler verified at: $iscc"
+          Start-Process -FilePath $iscc -ArgumentList "/?" -Wait -NoNewWindow
+          $global:LASTEXITCODE = 0
 
       - name: Run Rust Test Suite
         run: cargo test --verbose
