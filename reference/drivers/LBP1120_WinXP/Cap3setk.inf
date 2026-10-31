@@ -1,0 +1,112 @@
+; Canon Advanced Printing Technology 
+; Printer INF for Windows 2000/XP
+; Copyright CANON INC. 1998-2002 All Rights Reserved
+; CAP3SETK.INF
+
+[Version]
+Signature="$Windows NT$"
+Provider=%CANON%
+ClassGUID={4D36E979-E325-11CE-BFC1-08002BE10318}
+Class=Printer
+DriverVer= 07/19/2002,1.00.0.007
+CatalogFile=CAP3SETK.CAT
+
+[ClassInstall32.NT]
+AddReg=printer_class_addreg
+
+[printer_class_addreg]
+HKR,,,,%PrinterClassName%
+HKR,,Icon,,"-4"
+HKR,,Installer32,,"ntprint.dll,ClassInstall32"
+HKR,,NoDisplayClass,,1
+HKR,,EnumPropPages32,,"printui.dll,PrinterPropPageProvider"
+
+[Manufacturer]
+%CANON%=CANON
+
+[Canon]
+%DEVICE% = CAP3.NTx86,USBPRINT\CanonLASER_SHOT_LBP-91D2,CanonLASER_SHOT_LBP-91D2,Canon_LASER_SHOT_LBP-1120
+
+[CAP3.NTx86]
+CopyFiles=CAP3_SYS_FILES,CAP3_ALL_FILES
+DataFile=CAP3K.DLL
+DataSection=CAP3_DATA
+
+[CAP3_DATA]
+DriverFile  = CAP3K.DLL
+ConfigFile  = CAP3UIK.DLL
+HelpFile    = CAP3.HLP
+LanguageMonitor=%CAP3_LMON_NT%
+
+[CAP3_SYS_FILES]
+CAP3SMK.DLL,,,0x00000020
+CAP3LMK.DLL,,,0x00000020
+CAP3RSK.EXE,,,0x00000020
+CAP3EMN.DLL,,,0x00000020
+CAP3PTMN.DLL,,,0x00000020
+
+[CAP3_ALL_FILES]
+CAP3SETK.DLL
+CAP3UNIK.EXE
+CAP3SMK.DLL
+CAP3LMK.DLL
+CAP3RSK.EXE
+CAP3EMN.DLL
+CAP3PTMN.DLL
+CAP3LAK.EXE
+CAP3SWK.EXE
+CAP3PMN.DLL
+CAP3TRSK.EXE
+CAP3RDN.DLL
+CAP3HT.BIN
+CAP3K.DLL
+CAP3UIK.DLL
+CAP3APPN.DAT
+CAP3INFK.DAT
+CAP3.HLP
+CAP3.CNT
+CAP3ONN.EXE
+CAP3ZWAV.BIN
+
+[OEM URLS]
+"Canon" = "http://www.canon.com/support"
+
+[DestinationDirs]
+DefaultDestDir=66000
+CAP3_SYS_FILES=66002
+
+[SourceDisksNames]
+1 = %FD1%,,,
+2 = %FD2%,,,
+
+[SourceDisksFiles]
+CAP3INFK.DAT  = 1
+CAP3APPN.DAT  = 1
+CAP3SETK.DLL  = 1
+CAP3UNIK.EXE  = 1
+CAP3SMK.DLL   = 1
+CAP3LMK.DLL   = 1
+CAP3RSK.EXE   = 1
+CAP3EMN.DLL   = 1
+CAP3PTMN.DLL  = 1
+CAP3LAK.EXE   = 1
+CAP3SWK.EXE   = 1
+CAP3PMN.DLL   = 1
+CAP3TRSK.EXE  = 1
+CAP3RDN.DLL   = 1
+CAP3HT.BIN    = 1
+CAP3K.DLL     = 1
+CAP3UIK.DLL   = 1
+CAP3.HLP      = 1
+CAP3.CNT      = 1
+CAP3ONN.EXE   = 1
+CAP3ZWAV.BIN  = 2
+
+[Strings]
+CANON             = "Canon"
+PrinterClassName  = "Printer"
+DEVICE            = "Canon LASER SHOT LBP-1120"
+CAP3_LMON_NT      = "CAP3 Monitor,CAP3LMK.DLL"
+FD1               = "Canon LASER SHOT LBP-1120 (Windows 2000/XP) Setup Disk1"
+FD2               = "Canon LASER SHOT LBP-1120 (Windows 2000/XP) Setup Disk2"
+
