@@ -1,0 +1,162 @@
+name: Windows Release & Installer CI/CD
+
+on:
+  push:
+    branches: [ master, main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    name: Build, Test & Package Windows Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Node.js for Protocol Engine Tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node.js Dependencies
+        run: npm ci
+
+      - name: Install Inno Setup 6
+        run: |
+          choco install innosetup --no-progress
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+      - name: Verify Inno Setup Compiler
+        run: |
+          ISCC.exe /?
+
+      - name: Run Rust Test Suite
+        run: cargo test --verbose
+
+      - name: Run TypeScript Protocol Engine Tests
+        run: npx tsx --test src/core/captEngine.test.ts
+
+      - name: Compile Standalone Rust Release Binary
+        run: cargo build --release
+
+      - name: Verify Release Binary Integrity & Dependencies
+        run: |
+          $bin = "target\release\capt-poc.exe"
+          if (-not (Test-Path $bin)) {
+            throw "Release binary missing at $bin"
+          }
+          $bytes = (Get-Item $bin).Length
+          Write-Host "Compiled binary size: $bytes bytes"
+          if ($bytes -lt 100000) {
+            throw "Binary suspiciously small ($bytes bytes)"
+          }
+
+      - name: Stage Production Files for Installer
+        run: |
+          $dist = "dist\CanonLBP1120"
+          New-Item -Path "$dist\driver" -ItemType Directory -Force | Out-Null
+          Copy-Item "target\release\capt-poc.exe" "$dist\canon-lbp1120-service.exe" -Force
+          Copy-Item "reference\drivers\LBP1120_WinXP\CAP3ZWAV.BIN" "$dist\CAP3ZWAV.BIN" -Force
+          Copy-Item "installer\CanonLBP1120_WinUSB.inf" "$dist\driver\CanonLBP1120_WinUSB.inf" -Force
+          Copy-Item "installer\Uninstall-CanonLBP1120.ps1" "$dist\Uninstall-CanonLBP1120.ps1" -Force
+          Copy-Item "installer\Install-CanonLBP1120.ps1" "$dist\Install-CanonLBP1120.ps1" -Force
+          Get-ChildItem -Path $dist -Recurse | Select-Object Name, Length
+
+      - name: Compile Inno Setup Installer
+        run: |
+          ISCC.exe "installer\CanonLBP1120_Setup.iss"
+
+      - name: Verify Compiled Installer Artifact
+        run: |
+          $installer = "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe"
+          if (-not (Test-Path $installer)) {
+            throw "Expected installer $installer was not generated!"
+          }
+          $item = Get-Item $installer
+          Write-Host "Successfully verified installer: $($item.FullName) ($($item.Length) bytes)"
+          if ($item.Length -lt 500000) {
+            throw "Installer file size suspiciously small: $($item.Length) bytes"
+          }
+
+      - name: Run Automated Release Integrity & Security Test Suite
+        run: |
+          powershell.exe -ExecutionPolicy Bypass -File scripts\test_release_integrity.ps1
+
+      - name: Generate SHA256 Checksums
+        run: |
+          $installer = "installer\CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe"
+          $service = "dist\CanonLBP1120\canon-lbp1120-service.exe"
+          
+          $hashInstaller = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLower()
+          $hashService = (Get-FileHash -Path $service -Algorithm SHA256).Hash.ToLower()
+          
+          $checksums = @"
+          $hashInstaller  CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
+          $hashService  canon-lbp1120-service.exe
+          "@
+          
+          $checksums | Set-Content "SHA256SUMS.txt" -Encoding utf8
+          Write-Host "Generated SHA256 Checksums:"
+          Get-Content "SHA256SUMS.txt"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CanonLBP1120-Installer-v1.0.0-rc.1
+          path: |
+            installer/CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
+            dist/CanonLBP1120/canon-lbp1120-service.exe
+            SHA256SUMS.txt
+            RELEASE_NOTES.md
+            INSTALLATION_GUIDE.md
+            UNINSTALLATION_AND_RECOVERY.md
+            WINUSB_COMPATIBILITY_AND_SAFETY.md
+            SERVICE_SECURITY_AUDIT.md
+          if-no-files-found: error
+
+  publish-prerelease:
+    name: Publish GitHub Prerelease
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: CanonLBP1120-Installer-v1.0.0-rc.1
+          path: release-artifacts
+
+      - name: Publish GitHub Prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: Canon LaserShot LBP-1120 Driver ${{ github.ref_name }} (Release Candidate)
+          body_path: release-artifacts/RELEASE_NOTES.md
+          files: |
+            release-artifacts/CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
+            release-artifacts/canon-lbp1120-service.exe
+            release-artifacts/SHA256SUMS.txt
+            release-artifacts/INSTALLATION_GUIDE.md
+            release-artifacts/UNINSTALLATION_AND_RECOVERY.md
+            release-artifacts/WINUSB_COMPATIBILITY_AND_SAFETY.md
+            release-artifacts/SERVICE_SECURITY_AUDIT.md

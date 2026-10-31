@@ -12,3 +12,4 @@ if %ERRORLEVEL% NEQ 0 (
     echo Installation reported error code %ERRORLEVEL%.
     pause
 )
+

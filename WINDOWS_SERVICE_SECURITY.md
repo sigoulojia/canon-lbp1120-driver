@@ -101,3 +101,4 @@ To prevent multiple instances of the service daemon from running simultaneously 
 ### 5.3 Crash Recovery & Handle Cleanliness
 - WinUSB handles (`winusb_handle`) and file handles (`file_handle`) implement the Rust `Drop` trait, guaranteeing that `WinUsb_Free` and `CloseHandle` are executed upon scope exit.
 - SCM is configured with automatic restart (`actions= restart/5000/restart/10000/none/0`), ensuring that even in the event of an unexpected power transient or kernel reset, the service resumes without manual administrative intervention.
+

@@ -900,6 +900,8 @@ fn listen_on_pipe(
                 write_err = true;
             }
             let mut total_bytes = first_bytes_read as usize;
+            const MAX_SPOOL_BYTES: usize = 104_857_600; // 100 MB ceiling
+            let mut payload_oversized = false;
 
             loop {
                 let mut bytes_read = 0u32;
@@ -909,13 +911,21 @@ fn listen_on_pipe(
                     break;
                 }
 
+                total_bytes += bytes_read as usize;
+                if total_bytes > MAX_SPOOL_BYTES {
+                    payload_oversized = true;
+                    if !silent {
+                        eprintln!("[Spool Monitor] Rejected oversized pipe payload (exceeded 100 MB ceiling)");
+                    }
+                    break;
+                }
+
                 if !write_err && let Err(e) = file.write_all(&buf[..bytes_read as usize]) {
                     if !silent {
                         eprintln!("Failed writing to temp spool file: {}", e);
                     }
                     write_err = true;
                 }
-                total_bytes += bytes_read as usize;
             }
 
             if let Err(e) = file.flush() {
@@ -930,7 +940,7 @@ fn listen_on_pipe(
                 let _ = DisconnectNamedPipe(h_pipe);
             }
 
-            if write_err {
+            if write_err || payload_oversized {
                 let _ = std::fs::remove_file(&job_path);
                 continue;
             }
@@ -1069,11 +1079,21 @@ fn listen_on_tcp(
             write_err = true;
         }
         let mut total_bytes = first_bytes_read;
+        const MAX_SPOOL_BYTES: usize = 104_857_600; // 100 MB ceiling
+        let mut payload_oversized = false;
 
         loop {
             match stream.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
+                    total_bytes += n;
+                    if total_bytes > MAX_SPOOL_BYTES {
+                        payload_oversized = true;
+                        if !silent {
+                            eprintln!("[Spool Monitor] Rejected oversized TCP payload (exceeded 100 MB ceiling)");
+                        }
+                        break;
+                    }
                     if !write_err {
                         if let Err(e) = file.write_all(&buf[..n]) {
                             if !silent {
@@ -1082,7 +1102,6 @@ fn listen_on_tcp(
                             write_err = true;
                         }
                     }
-                    total_bytes += n;
                 }
                 Err(_) => break,
             }
@@ -1096,7 +1115,7 @@ fn listen_on_tcp(
         }
         drop(file);
 
-        if write_err {
+        if write_err || payload_oversized {
             let _ = std::fs::remove_file(&job_path);
             continue;
         }

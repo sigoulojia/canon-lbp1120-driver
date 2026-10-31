@@ -108,3 +108,4 @@ This driver distribution is 100% self-contained. It requires **zero external run
 | **Job fails with "Printer not detected"** | USB cable disconnected or printer powered off. | Ensure the power switch is ON and the USB cable is firmly seated. The service automatically reconnects. |
 | **Printer red error LED flashes** | Transient ASIC buffer state. | Run the **Reset Printer Hardware** shortcut from the Start Menu, or power cycle the printer for 5 seconds. |
 | **Jobs stuck in Windows queue** | Prior failed print session. | Run `canon-lbp1120-service.exe reset` or restart the `CanonLBP1120Service` in `services.msc`. |
+

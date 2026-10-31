@@ -128,3 +128,4 @@ This ensures:
 1. When the user plugs the printer into any USB port, Windows PnP instantly binds `WinUSB.sys` without requiring user prompts or driver disks.
 2. The device interface GUID `{F9A25620-E255-4B37-93F3-0C3D3D2DFBD3}` is assigned to the USB device node.
 3. Windows Driver Signature Enforcement (DSE) remains satisfied because `WinUSB.sys` is a Microsoft WHQL-signed system driver.
+

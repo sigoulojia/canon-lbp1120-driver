@@ -212,3 +212,4 @@ netstat -ano | findstr "9100 9101"
 :: Software Reset Physical Printer Engine
 "C:\Program Files\CanonLBP1120\canon-lbp1120-service.exe" reset
 ```
+

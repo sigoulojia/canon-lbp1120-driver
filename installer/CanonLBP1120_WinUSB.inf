@@ -62,3 +62,4 @@ ProviderName     = "Canon LBP-1120 Open Engineering"
 ManufacturerName = "Canon (Open Driver Ecosystem)"
 DeviceName       = "Canon LaserShot LBP-1120 (WinUSB Interface)"
 WinUSB_SvcDesc   = "WinUSB Driver Service"
+

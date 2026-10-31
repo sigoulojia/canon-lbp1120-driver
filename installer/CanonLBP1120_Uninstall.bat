@@ -12,3 +12,4 @@ if %ERRORLEVEL% NEQ 0 (
     echo Uninstallation reported error code %ERRORLEVEL%.
     pause
 )
+

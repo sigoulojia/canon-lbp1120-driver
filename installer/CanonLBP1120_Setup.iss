@@ -1,10 +1,10 @@
 ; ==============================================================================
 ; Inno Setup 6 Script for Canon LaserShot LBP-1120 Open Source Driver Suite
-; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0.exe
+; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe
 ; ==============================================================================
 
 #define MyAppName "Canon LaserShot LBP-1120 Driver Suite"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.0-rc.1"
 #define MyAppPublisher "Autonomous Hardware Research Team"
 #define MyAppExeName "canon-lbp1120-service.exe"
 
@@ -17,12 +17,12 @@ DefaultDirName={autopf}\CanonLBP1120
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=.
-OutputBaseFilename=CanonLBP1120_Setup_v1.0.0
+OutputBaseFilename=CanonLBP1120_Setup_v1.0.0-rc.1_x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-ArchitecturesInstallIn64BitMode=x64 compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DisableDirPage=no
 DisableProgramGroupPage=yes
 
@@ -34,6 +34,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Source: "..\target\release\capt-poc.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
 Source: "..\reference\drivers\LBP1120_WinXP\CAP3ZWAV.BIN"; DestDir: "{app}"; Flags: ignoreversion
 Source: "CanonLBP1120_WinUSB.inf"; DestDir: "{app}\driver"; Flags: ignoreversion
+Source: "Install-CanonLBP1120.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Uninstall-CanonLBP1120.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CanonLBP1120_Setup.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CanonLBP1120_Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Printer Status Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "probe"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
@@ -52,9 +56,9 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "install-service"; Flags: runhidd
 
 [UninstallRun]
 ; 1. Stop and remove SCM service
-Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall-service"; Flags: runhidden waituntilterminated
+Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall-service"; RunOnceId: "UninstallLBP1120Service"; Flags: runhidden waituntilterminated
 ; 2. Remove printer queues and ports
-Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall"; Flags: runhidden waituntilterminated
+Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall"; RunOnceId: "UninstallLBP1120Printer"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
 Type: files; Name: "C:\ProgramData\CanonLBP1120\service.log"

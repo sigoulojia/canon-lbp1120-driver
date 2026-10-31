@@ -82,3 +82,4 @@ Write-Host "`n=======================================================" -Foregrou
 Write-Host "   UNINSTALLATION COMPLETE                             " -ForegroundColor Green
 Write-Host "=======================================================" -ForegroundColor Green
 Write-Host "Canon LaserShot LBP-1120 driver and service have been completely removed from this system."
+
