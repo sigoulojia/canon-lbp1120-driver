@@ -180,3 +180,4 @@ sequenceDiagram
    Subsequent calls to `WinUsb_WritePipe` block until the 5,000 ms timeout expires, returning Win32 Error 121 (`ERROR_SEM_TIMEOUT`) or Error 995 (`ERROR_OPERATION_ABORTED`).
 5. **The Hard Invariant:**
    The driver enforces a hardware safety gate: **zero status queries are dispatched between `IC_BEGIN_DATA` (`0xD0A1`) and `IC_END_PAGE` (`0xD0A2`)**.
+
