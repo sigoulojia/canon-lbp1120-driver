@@ -88,7 +88,7 @@ pub fn run_print_job(
 
     // Check hardware status
     println!("Checking hardware status...");
-    let mut status = match printer.query_extended_status() {
+    let status = match printer.query_extended_status() {
         Ok(s) => s,
         Err(e) => {
             eprintln!(
@@ -105,19 +105,20 @@ pub fn run_print_job(
         }
     };
 
-    // If unit was left in reserved/unclean state from previous session, clean it up
-    if !status.unit_free {
-        println!(
-            "Notice: Printer unit was left reserved by a previous session; clearing and resetting session state..."
-        );
-        let _ = printer.clear_error();
-        let _ = printer.clear_misprint();
-        let _ = printer.discard_data();
-        let _ = printer.go_offline();
-        let _ = printer.release_unit();
-        sleep(Duration::from_millis(150));
-        if let Ok(st) = printer.query_extended_status() {
-            status = st;
+    // Clean up any transient error or unread data before starting job
+    let _ = printer.clear_error();
+    let _ = printer.discard_data();
+
+    // If the engine is still post-rotating or feeding from a previous job, wait for standby idle
+    if (status.aux & 0x04) != 0 || status.waiting {
+        println!("Engine is settling from a previous cycle; waiting for standby idle...");
+        for _ in 0..120 {
+            sleep(Duration::from_millis(250));
+            if let Ok(st) = printer.query_extended_status() {
+                if (st.aux & 0x04) == 0 && !st.waiting {
+                    break;
+                }
+            }
         }
     }
 
@@ -414,6 +415,7 @@ pub fn run_print_job(
             printer.reserve_unit()?;
             let _ = printer.clear_error();
             let _ = printer.discard_data();
+            let _ = printer.query_basic_status();
             printer.go_online(0)?;
 
             let mut online = false;
@@ -435,6 +437,7 @@ pub fn run_print_job(
                 return Err("Printer failed to enter Online mode for print job".into());
             }
             println!("ONLINE (Ready)");
+            sleep(Duration::from_millis(500));
         } else {
             println!(
                 "Preparing printer online mode for page {}/{}...",
@@ -487,6 +490,14 @@ pub fn run_print_job(
                 page_count
             );
         }
+
+        // Synchronize with engine video readiness (fuser heating & polygon scanner lock)
+        print!("Synchronizing with engine video readiness... ");
+        if let Err(e) = printer.wait_for_video_ready(100, Duration::from_millis(100)) {
+            printer.full_recovery();
+            return Err(format!("Engine video readiness synchronization failed: {:?}", e).into());
+        }
+        println!("VIDEO PIPE READY");
 
         // Stage 5: USB Transmission
         let t_usb = std::time::Instant::now();

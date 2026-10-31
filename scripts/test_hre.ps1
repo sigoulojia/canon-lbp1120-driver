@@ -35,3 +35,4 @@ if ($mod -ne [IntPtr]::Zero) {
     Write-Output ("uiHREDelete RVA/Ptr: 0x{0:X}" -f $pDelete.ToInt64())
     [NativeHre]::FreeLibrary($mod) | Out-Null
 }
+

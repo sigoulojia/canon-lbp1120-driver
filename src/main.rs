@@ -599,6 +599,14 @@ fn run_print_pbm(pbm_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // Synchronize with engine video readiness (fuser heating & polygon scanner lock)
+    print!("Synchronizing with engine video readiness... ");
+    if let Err(e) = printer.wait_for_video_ready(100, Duration::from_millis(100)) {
+        printer.full_recovery();
+        return Err(format!("Engine video readiness synchronization failed: {:?}", e).into());
+    }
+    println!("VIDEO PIPE READY");
+
     // 5. Send IC_BEGIN_PAGE (0xD0A0)
     println!("\n[Step 5] Transmitting IC_BEGIN_PAGE (Opcode 0xD0A0, 34-byte A4 geometry)...");
     let begin_page = CaptPacket::new(OPCODE_IC_BEGIN_PAGE, config.build_begin_page_payload())?;

@@ -20,3 +20,4 @@ public class HreTester {
 Add-Type -TypeDefinition $src
 
 Write-Output "Harness compiled successfully."
+

@@ -60,3 +60,4 @@ if ($h -ne [IntPtr]::Zero) {
     [System.Runtime.InteropServices.Marshal]::FreeHGlobal($lpIn)
     [System.Runtime.InteropServices.Marshal]::FreeHGlobal($lpOut)
 }
+
