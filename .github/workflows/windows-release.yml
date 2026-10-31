@@ -143,6 +143,7 @@ jobs:
           Copy-Item "UNINSTALLATION_AND_RECOVERY.md" -Destination "release-staging\" -Force
           Copy-Item "WINUSB_COMPATIBILITY_AND_SAFETY.md" -Destination "release-staging\" -Force
           Copy-Item "SERVICE_SECURITY_AUDIT.md" -Destination "release-staging\" -Force
+          Copy-Item "SERVICE_INSTALLATION_ROOT_CAUSE_AUDIT.md" -Destination "release-staging\" -Force
           Write-Host "Staged Release Artifacts:"
           Get-ChildItem -Path "release-staging" | Select-Object Name, Length
 

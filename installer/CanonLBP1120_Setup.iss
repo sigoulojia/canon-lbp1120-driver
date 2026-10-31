@@ -1,10 +1,10 @@
 ; ==============================================================================
 ; Inno Setup 6/7 Script for Canon LaserShot LBP-1120 Open Source Driver Suite
-; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0-rc.2_x64.exe
+; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0-rc.3_x64.exe
 ; ==============================================================================
 
 #define MyAppName "Canon LaserShot LBP-1120 Driver Suite"
-#define MyAppVersion "1.0.0-rc.2"
+#define MyAppVersion "1.0.0-rc.3"
 #define MyAppPublisher "Autonomous Hardware Research Team"
 #define MyAppExeName "canon-lbp1120-service.exe"
 
@@ -17,7 +17,7 @@ DefaultDirName={commonpf64}\CanonLBP1120
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=.
-OutputBaseFilename=CanonLBP1120_Setup_v1.0.0-rc.2_x64
+OutputBaseFilename=CanonLBP1120_Setup_v1.0.0-rc.3_x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -43,8 +43,10 @@ Source: "CanonLBP1120_Uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Printer Status Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "probe"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
+Name: "{group}\Run Installation Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "diagnose-service"; IconFilename: "{sys}\shell32.dll"; IconIndex: 23
 Name: "{group}\Reset Printer State"; Filename: "{app}\{#MyAppExeName}"; Parameters: "reset"; IconFilename: "{sys}\shell32.dll"; IconIndex: 238
 Name: "{group}\Print 6-Zone Calibration Page"; Filename: "{app}\{#MyAppExeName}"; Parameters: "generate-calibration"; IconFilename: "{sys}\shell32.dll"; IconIndex: 16
+Name: "{group}\View Installation Diagnostics Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe %TEMP%\CanonLBP1120_Install_Diagnostics.txt"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\View Service Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe C:\ProgramData\CanonLBP1120\service.log"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
 Name: "{group}\Uninstall Driver Suite"; Filename: "{uninstallexe}"
 
@@ -59,6 +61,28 @@ Type: files; Name: "C:\ProgramData\CanonLBP1120\service.log"
 Type: dirifempty; Name: "C:\ProgramData\CanonLBP1120"
 
 [Code]
+function ReadInstallError(): String;
+var
+  ErrorFile: String;
+  Lines: TArrayOfString;
+  I: Integer;
+begin
+  Result := '';
+  ErrorFile := GetEnv('TEMP') + '\CanonLBP1120_Install_Error.txt';
+  if FileExists(ErrorFile) then
+  begin
+    if LoadStringsFromFile(ErrorFile, Lines) then
+    begin
+      for I := 0 to GetArrayLength(Lines) - 1 do
+      begin
+        if Result <> '' then
+          Result := Result + #13#10;
+        Result := Result + Lines[I];
+      end;
+    end;
+  end;
+end;
+
 function RunAppCmd(const AppPath, Params: String; var ExitCode: Integer): Boolean;
 begin
   Log(Format('Executing: "%s" %s', [AppPath, Params]));
@@ -73,6 +97,7 @@ var
   PnpPath: String;
   ResultCode: Integer;
   ErrorMsg: String;
+  ErrorDetails: String;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -108,7 +133,14 @@ begin
     Log('Step 3: Registering and starting Windows Service CanonLBP1120Service...');
     if (not RunAppCmd(ExePath, 'install-service', ResultCode)) or (ResultCode <> 0) then
     begin
-      ErrorMsg := Format('Failed to register and start Windows Service "CanonLBP1120Service" (Exit code %d). Installation aborted.', [ResultCode]);
+      ErrorDetails := ReadInstallError();
+      if ErrorDetails = '' then
+        ErrorMsg := Format('Failed to register and start Windows Service "CanonLBP1120Service" (Exit code %d).', [ResultCode])
+      else
+        ErrorMsg := Format('Failed to register and start Windows Service "CanonLBP1120Service" (Exit code %d):' + #13#10#13#10 + '%s', [ResultCode, ErrorDetails]);
+
+      ErrorMsg := ErrorMsg + #13#10#13#10 +
+        Format('A detailed diagnostic report has been saved to:' + #13#10 + '%s\CanonLBP1120_Install_Diagnostics.txt' + #13#10#13#10 + 'Installation aborted.', [GetEnv('TEMP')]);
       SuppressibleMsgBox(ErrorMsg, mbError, MB_OK, IDOK);
       RaiseException(ErrorMsg);
     end;
@@ -117,7 +149,8 @@ begin
     Log('Step 4: Running full post-installation verification audit...');
     if (not RunAppCmd(ExePath, 'verify-installation', ResultCode)) or (ResultCode <> 0) then
     begin
-      ErrorMsg := Format('Post-installation verification failed (Exit code %d). Service or listeners inactive. Installation aborted.', [ResultCode]);
+      ErrorMsg := Format('Post-installation verification failed (Exit code %d). Service or listeners inactive.' + #13#10#13#10 +
+        'Diagnostic report saved to: %s\CanonLBP1120_Install_Diagnostics.txt' + #13#10#13#10 + 'Installation aborted.', [ResultCode, GetEnv('TEMP')]);
       SuppressibleMsgBox(ErrorMsg, mbError, MB_OK, IDOK);
       RaiseException(ErrorMsg);
     end;
