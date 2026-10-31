@@ -127,3 +127,4 @@ Because:
 $$\mathbf{A.\; READY\; FOR\; PUBLIC\; BETA\; (RELEASE\; CANDIDATE\; 1)}$$
 
 **Verdict:** The release candidate `v1.0.0-rc.1` is **approved for public beta release and community distribution**. A final stable `v1.0.0` will be declared once multi-machine clean-install reports are gathered from the public beta.
+

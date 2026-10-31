@@ -138,3 +138,4 @@ When SCM sends `SERVICE_CONTROL_STOP` or `SERVICE_CONTROL_SHUTDOWN`:
 | **LocalSystem Privilege Scope** | HIGH | No child process creation; no interactive UI. | **MEDIUM** (Controlled by OS DACL) |
 
 **Security Certification:** The service configuration is **approved** for production release under Windows 10 x64 and Windows 11 x64 with the specified compensating controls.
+

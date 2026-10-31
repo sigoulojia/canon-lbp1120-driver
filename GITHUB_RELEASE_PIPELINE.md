@@ -107,3 +107,4 @@ Triggered by:
 ## 5. Verification & Pipeline Audit
 
 The workflow definition in [`.github/workflows/windows-release.yml`](file:///f:/Games/canon-lbp1120-driver/.github/workflows/windows-release.yml) has been verified for correct YAML syntax, valid action references (`actions/checkout@v4`, `softprops/action-gh-release@v2`), and exact script paths matching the repository layout.
+

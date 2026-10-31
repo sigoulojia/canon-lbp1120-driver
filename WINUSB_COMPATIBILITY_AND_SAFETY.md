@@ -109,3 +109,4 @@ To completely remove the staged INF package from the Windows Driver Store:
 ## 6. Audit Verdict
 
 `installer/CanonLBP1120_WinUSB.inf` is **100% safe, non-destructive, and strictly scoped**. It binds exclusively to `USB\VID_04A9&PID_262B`, does not modify any system files or unrelated hardware, and can be rolled back instantaneously via standard Windows operating system tools.
+

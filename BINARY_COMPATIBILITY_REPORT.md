@@ -97,3 +97,4 @@ An exhaustive scan of `src/*.rs` confirmed **zero dynamic runtime calls to `Load
 The compiled release executable `canon-lbp1120-service.exe` is a **pure 64-bit Windows x64 binary**. It conforms strictly to modern Windows security and runtime standards, relying 100% on native in-box operating system components.
 
 **Final Release Scope:** **Windows 10 x64 / Windows 11 x64**.
+

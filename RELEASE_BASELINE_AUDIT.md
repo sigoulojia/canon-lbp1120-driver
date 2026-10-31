@@ -102,3 +102,4 @@ Inno Setup 6 requires `x64` or `x64compatible` (no space). Line 25 currently rea
 The project baseline is fundamentally sound. The underlying printing engine and Windows service architecture require **zero architectural modifications**. 
 
 By fixing the Inno Setup script line 25 syntax, aligning version macros to `v1.0.0-rc.1_x64`, creating `.github/workflows/windows-release.yml`, and executing the actual compiler, the project will immediately produce the authentic, verified `CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe` installer.
+

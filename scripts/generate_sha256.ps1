@@ -27,3 +27,4 @@ Get-Content "SHA256SUMS.txt"
 Write-Host "`nFile Sizes:" -ForegroundColor Cyan
 Write-Host "  $installer : $($installerItem.Length) bytes ($([Math]::Round($installerItem.Length / 1MB, 2)) MB)"
 Write-Host "  $service   : $($serviceItem.Length) bytes ($([Math]::Round($serviceItem.Length / 1KB, 1)) KB)"
+

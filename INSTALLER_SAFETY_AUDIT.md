@@ -112,3 +112,4 @@ Both the Inno Setup installer and the PowerShell scripts produce descriptive, co
 ## 5. Audit Verdict
 
 The installation and uninstallation pipelines are **certified safe, deterministic, and non-destructive**. They adhere strictly to Microsoft Windows Application Quality Guidelines.
+

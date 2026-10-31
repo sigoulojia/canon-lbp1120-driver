@@ -79,3 +79,4 @@ if ($importOffset -gt 0) {
 } else {
     Write-Host "Unable to map import table offset."
 }
+

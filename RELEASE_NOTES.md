@@ -72,3 +72,4 @@ Get-FileHash -Path CanonLBP1120_Setup_v1.0.0-rc.1_x64.exe -Algorithm SHA256
 > This release is classified as a **Release Candidate (RC1)**. While it has undergone exhaustive automated test suites (69 Rust tests, 7 TypeScript tests, 18 integrity tests) and physical printing validation on the reference hardware (`Serial: 0353S4cQ`), users are advised:
 > 1. Clean-slate VM certification on fresh Windows 10/11 ISOs is documented in the test matrix and remains active for external verification.
 > 2. If the printer was previously configured with Microsoft's generic `USB Printing Support`, Device Manager will show the device under *Universal Serial Bus devices* as `Canon LaserShot LBP-1120 (WinUSB Interface)`. Driver rollback instructions are provided in `WINUSB_COMPATIBILITY_AND_SAFETY.md`.
+
