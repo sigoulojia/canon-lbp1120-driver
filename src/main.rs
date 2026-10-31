@@ -3,6 +3,7 @@ mod pbm;
 mod pdf;
 mod protocol;
 mod scoa;
+pub mod sound;
 mod spool;
 mod usb;
 
@@ -579,6 +580,13 @@ fn run_print_pbm(pbm_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         (video_data.len() as f64) / (pbm_a4.data.len() as f64) * 100.0
     );
 
+    if video_data.len() > 480_000 {
+        eprintln!(
+            "[WARNING] SCoA stream size ({} bytes) exceeds LBP-1120 512KB hardware buffer!",
+            video_data.len()
+        );
+    }
+
     // 5. Send IC_BEGIN_PAGE (0xD0A0)
     println!("\n[Step 5] Transmitting IC_BEGIN_PAGE (Opcode 0xD0A0, 34-byte A4 geometry)...");
     let begin_page = CaptPacket::new(OPCODE_IC_BEGIN_PAGE, config.build_begin_page_payload())?;
@@ -593,35 +601,36 @@ fn run_print_pbm(pbm_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut bd_bytes = Vec::new();
     begin_data.write(&mut bd_bytes)?;
     printer.write_pipe(0x01, &bd_bytes)?;
-    let _ = printer.query_basic_status();
 
-    // 7. Stream IC_VIDEO_DATA packets (chunked up to 16,384B with IM_DATA_BUSY backpressure between packets)
+    // 7. Stream IC_VIDEO_DATA packets (chunked 4,096 bytes matching canonical CAPT 4100B packet framing)
     println!(
         "[Step 7] Streaming IC_VIDEO_DATA ({} bytes total SCoA stream)...",
         video_data.len()
     );
-    let chunk_size = 16384;
+    let chunk_size = 4096;
     let mut offset = 0;
     let mut packet_idx = 0;
     while offset < video_data.len() {
         let end = (offset + chunk_size).min(video_data.len());
         let chunk = &video_data[offset..end];
 
-        // Check backpressure between packets: wait while IM_DATA_BUSY (0x08) is set
-        for _ in 0..200 {
-            if let Ok(buf) = printer.query_basic_status() {
-                let basic = buf[4];
-                if (basic & 0x08) == 0 {
-                    break;
-                }
-                sleep(Duration::from_millis(10));
-            }
-        }
-
         let video_pkt = CaptPacket::new(OPCODE_IC_VIDEO_DATA, chunk.to_vec())?;
         let mut pkt_bytes = Vec::new();
         video_pkt.write(&mut pkt_bytes)?;
-        printer.write_pipe(0x01, &pkt_bytes)?;
+        match printer.write_pipe(0x01, &pkt_bytes) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!(
+                    "[Step 7: USB Tx Error] Write pipe failed on Chunk {} (offset {}/{} bytes): {}. Aborting without retransmission.",
+                    packet_idx + 1,
+                    offset,
+                    video_data.len(),
+                    e
+                );
+                printer.full_recovery();
+                return Err(format!("USB write failed on Chunk {}: {}", packet_idx + 1, e).into());
+            }
+        }
 
         offset = end;
         packet_idx += 1;
@@ -716,19 +725,29 @@ fn run_print_pbm(pbm_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::panic::set_hook(Box::new(|info| {
+        let log_path = std::env::temp_dir().join("lbp1120_panic.log");
+        let _ = std::fs::write(&log_path, format!("PANIC: {}\n", info));
+    }));
+
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         println!("Canon LaserShot LBP-1120 CAPT v1 / SCoA Tool");
         println!("Usage:");
-        println!("  capt-poc probe");
-        println!("  capt-poc test-pdf <input.pdf> [output.pbm]");
-        println!("  capt-poc compare-halftone <input.pdf> [page_idx] [prefix]");
-        println!("  capt-poc print <input.pbm>");
-        println!("  capt-poc generate-a4 [output.pbm]");
-        println!("  capt-poc generate-sample <output.pbm> [width_bytes] [height_lines]");
-        println!("  capt-poc encode <input.pbm> <output.capt> [chunk_size]");
-        println!("  capt-poc decode <input.capt> <output.pbm>");
-        println!("  capt-poc verify <input.pbm>");
+        println!("  capt-poc install                          - Install dual-mode Windows print queues & start service");
+        println!("  capt-poc uninstall                        - Remove Windows print queues, ports, and service");
+        println!("  capt-poc spool-server                     - Run foreground dual-mode spool server (TCP & Pipes)");
+        println!("  capt-poc service                          - Run background detached spool server");
+        println!("  capt-poc print-pdf <input.pdf> [normal|photo] - Print a PDF directly to physical printer");
+        println!("  capt-poc probe                            - Probe WinUSB device and query status");
+        println!("  capt-poc test-pdf <input.pdf> [output.pbm] [normal|photo] - Rasterize PDF to PBM");
+        println!("  capt-poc compare-halftone <input.pdf> [page_idx] [prefix] - Compare Normal vs Photo halftone");
+        println!("  capt-poc print <input.pbm>                - Print raw PBM file to physical printer");
+        println!("  capt-poc generate-a4 [output.pbm]         - Generate test A4 PBM pattern");
+        println!("  capt-poc generate-sample <output.pbm>     - Generate sample PBM pattern");
+        println!("  capt-poc encode <input.pbm> <output.capt> - Encode PBM to CAPT v1 / SCoA stream");
+        println!("  capt-poc decode <input.capt> <output.pbm> - Decode CAPT stream to PBM");
+        println!("  capt-poc verify <input.pbm>               - Verify encode-decode roundtrip fidelity");
         return Ok(());
     }
 
@@ -743,14 +762,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             spool::run_pipe_server(false)?;
         }
         "service" => {
-            // Detach and release console so daemon runs 100% silently in background on Win10/Win11
-            unsafe {
-                #[link(name = "kernel32")]
-                unsafe extern "system" {
-                    fn FreeConsole() -> i32;
-                }
-                let _ = FreeConsole();
-            }
             spool::run_pipe_server(true)?;
         }
         "print-pdf" => {

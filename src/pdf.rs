@@ -30,12 +30,23 @@ pub fn load_pdf_document(pdf_path: &str) -> Result<PdfDocument, Box<dyn Error>> 
     Ok(doc)
 }
 
+pub const CLUSTERED_SCREEN_8X8: [[u8; 8]; 8] = [
+    [230, 203, 175, 148, 152, 179, 207, 234],
+    [226, 144, 115,  87,  91, 119, 148, 238],
+    [199, 111,  58,  30,  34,  62, 123, 211],
+    [171,  83,  26,   3,   7,  38,  95, 183],
+    [167,  79,  22,   0,  11,  42,  99, 187],
+    [195, 107,  54,  18,  14,  46, 127, 215],
+    [222, 139,  75,  71,  50,  67, 135, 242],
+    [246, 191, 163, 131, 103, 159, 175, 250],
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HalftoneMode {
     /// Normal mode: optimized for everyday text and documents
-    /// - Solid text & dark strokes (Y <= 45) snap directly to solid black (100% crisp vector letters)
-    /// - Clean margins (Y >= 245) snap directly to pure white (zero stray specks)
-    /// - Midtones (46..244) use Serpentine Floyd-Steinberg so images & charts in documents are preserved
+    /// - Solid text & dark strokes (Y <= 55) snap directly to solid black (100% crisp vector letters)
+    /// - Clean margins and light backgrounds (Y >= 225) snap directly to pure white (zero stray specks)
+    /// - Midtones (56..224) use 8x8 clustered-dot halftone screening for optimal laser toner stability and high SCoA compression
     Normal,
     /// Photo mode: full-range continuous Serpentine Floyd-Steinberg error diffusion for maximum photographic gradations
     Photo,
@@ -192,28 +203,24 @@ pub fn render_pdf_page_with_mode(
 
                 let (is_black, error) = match mode {
                     HalftoneMode::Normal => {
-                        if gray <= 45 {
+                        if gray <= 55 {
                             // Hard snap: solid black text & vector lines (no dot diffusion on text)
                             (true, 0)
-                        } else if gray >= 245 {
-                            // Hard snap: clean white margins
+                        } else if gray >= 225 {
+                            // Hard snap: clean white margins & light background tints
                             (false, 0)
                         } else {
-                            // Smooth error diffusion for midtones (photos and graphics in documents)
-                            let val = gray as i32 + err_curr[x_err] as i32;
-                            let val_clamped = val.clamp(0, 255);
-                            if val_clamped < 135 {
-                                (true, val_clamped)
-                            } else {
-                                (false, val_clamped - 255)
-                            }
+                            // 8x8 clustered-dot halftone screen for graphics/charts/images
+                            let threshold = CLUSTERED_SCREEN_8X8[dest_y % 8][x % 8];
+                            let is_dot = (gray as u8) < threshold;
+                            (is_dot, 0)
                         }
                     }
                     HalftoneMode::Photo => {
                         // Full-range photographic error diffusion with margin & deep shadow snapping
                         if gray <= 20 {
                             (true, 0)
-                        } else if gray >= 242 {
+                        } else if gray >= 235 {
                             (false, 0)
                         } else {
                             let val = gray as i32 + err_curr[x_err] as i32;
@@ -274,24 +281,23 @@ pub fn render_pdf_page_with_mode(
 
                 let (is_black, error) = match mode {
                     HalftoneMode::Normal => {
-                        if gray <= 45 {
+                        if gray <= 55 {
+                            // Hard snap: solid black text & vector lines (no dot diffusion on text)
                             (true, 0)
-                        } else if gray >= 245 {
+                        } else if gray >= 225 {
+                            // Hard snap: clean white margins & light background tints
                             (false, 0)
                         } else {
-                            let val = gray as i32 + err_curr[x_err] as i32;
-                            let val_clamped = val.clamp(0, 255);
-                            if val_clamped < 135 {
-                                (true, val_clamped)
-                            } else {
-                                (false, val_clamped - 255)
-                            }
+                            // 8x8 clustered-dot halftone screen for graphics/charts/images
+                            let threshold = CLUSTERED_SCREEN_8X8[dest_y % 8][x % 8];
+                            let is_dot = (gray as u8) < threshold;
+                            (is_dot, 0)
                         }
                     }
                     HalftoneMode::Photo => {
                         if gray <= 20 {
                             (true, 0)
-                        } else if gray >= 242 {
+                        } else if gray >= 235 {
                             (false, 0)
                         } else {
                             let val = gray as i32 + err_curr[x_err] as i32;

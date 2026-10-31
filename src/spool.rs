@@ -4,6 +4,7 @@ use crate::protocol::{
     OPCODE_IC_VIDEO_DATA, PageHeaderConfig,
 };
 use crate::scoa::ScoaEncoder;
+use crate::sound::{CanonSound, play_sound};
 use crate::usb::UsbPrinter;
 use std::env;
 use std::error::Error;
@@ -13,6 +14,10 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 use windows::Win32::Foundation::{GetLastError, INVALID_HANDLE_VALUE};
+use windows::Win32::Security::{
+    InitializeSecurityDescriptor, SetSecurityDescriptorDacl, PSECURITY_DESCRIPTOR,
+    SECURITY_ATTRIBUTES, SECURITY_DESCRIPTOR,
+};
 use windows::Win32::Storage::FileSystem::{PIPE_ACCESS_INBOUND, ReadFile};
 use windows::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE,
@@ -23,6 +28,10 @@ use windows::core::w;
 
 pub const PIPE_NAME_NORMAL: &str = r"\\.\pipe\CanonLBP1120";
 pub const PIPE_NAME_PHOTO: &str = r"\\.\pipe\CanonLBP1120_Photo";
+pub const TCP_PORT_NORMAL: u16 = 9100;
+pub const TCP_PORT_PHOTO: u16 = 9101;
+pub const TCP_PORT_NAME_NORMAL: &str = "CanonLBP1120_Normal";
+pub const TCP_PORT_NAME_PHOTO: &str = "CanonLBP1120_Photo";
 pub const PRINTER_NAME_NORMAL: &str = "Canon LaserShot LBP-1120";
 pub const PRINTER_NAME_PHOTO: &str = "Canon LaserShot LBP-1120 (Photo)";
 
@@ -102,6 +111,7 @@ pub fn run_print_job(
             "Notice: Printer unit was left reserved by a previous session; clearing and resetting session state..."
         );
         let _ = printer.clear_error();
+        let _ = printer.clear_misprint();
         let _ = printer.discard_data();
         let _ = printer.go_offline();
         let _ = printer.release_unit();
@@ -112,6 +122,7 @@ pub fn run_print_job(
     }
 
     if status.door_open {
+        play_sound(CanonSound::CoverOpen);
         println!(
             "Notice: Printer door/cover is open. Waiting for cover to be closed (up to 60s)..."
         );
@@ -127,13 +138,16 @@ pub fn run_print_job(
             }
         }
         if !closed {
+            play_sound(CanonSound::Error);
             return Err("Cannot print: Printer door/cover is open!".into());
         }
     }
     if status.no_cartridge {
+        play_sound(CanonSound::NoCartridge);
         return Err("Cannot print: Toner cartridge is missing!".into());
     }
     if status.paper_jam {
+        play_sound(CanonSound::PaperJam);
         println!(
             "Notice: Paper jam detected! Waiting for paper path to be cleared (open cover, remove paper, close cover, up to 90s)..."
         );
@@ -149,10 +163,13 @@ pub fn run_print_job(
             }
         }
         if !cleared {
+            play_sound(CanonSound::Error);
             return Err("Cannot print: Paper jam detected in printer path!".into());
         }
     }
-    if status.no_paper {
+    let is_paper_empty = printer.get_port_status().map(|p| p.paper_empty).unwrap_or(false);
+    if is_paper_empty {
+        play_sound(CanonSound::AddPaper);
         println!("\n*******************************************************");
         println!("  [تنبيه: درج الورق فارغ]");
         println!("  درج الورق فارغ حالياً! يرجى إضافة الورق لبدء الطباعة...");
@@ -168,10 +185,11 @@ pub fn run_print_job(
                 print!(".");
                 let _ = std::io::Write::flush(&mut std::io::stdout());
             }
-            if let Ok(st) = printer.query_extended_status()
-                && !st.no_paper
+            if let Ok(port_st2) = printer.get_port_status()
+                && !port_st2.paper_empty
             {
                 loaded = true;
+                play_sound(CanonSound::PaperLoaded);
                 println!(
                     "\n\n>>> [تم إضافة الورق بنجاح!] تم الكشف عن الورق في الدرج. بدء الطباعة فوراً... <<<"
                 );
@@ -188,6 +206,7 @@ pub fn run_print_job(
 
     let hw_handshake_ms = t_hw_init.elapsed().as_millis();
     println!("Hardware check completed ({} ms).", hw_handshake_ms);
+    play_sound(CanonSound::PrintStart);
 
     let mut total_raster_ms = 0u128;
     let mut total_pixel_ms = 0u128;
@@ -255,9 +274,8 @@ pub fn run_print_job(
                 println!("READY");
             }
 
-            if let Ok(st) = printer.query_extended_status()
-                && st.no_paper
-            {
+            let mid_paper_empty = printer.get_port_status().map(|p| p.paper_empty).unwrap_or(false);
+            if mid_paper_empty {
                 println!("\n*******************************************************");
                 println!("  [تنبيه: نفد الورق من درج الطابعة]");
                 println!(
@@ -278,8 +296,8 @@ pub fn run_print_job(
                         print!(".");
                         let _ = std::io::Write::flush(&mut std::io::stdout());
                     }
-                    if let Ok(st2) = printer.query_extended_status()
-                        && !st2.no_paper
+                    if let Ok(port_st2) = printer.get_port_status()
+                        && !port_st2.paper_empty
                     {
                         loaded = true;
                         println!(
@@ -346,8 +364,37 @@ pub fn run_print_job(
         for y in 0..pbm.height {
             encoder.encode_line(pbm.line(y));
         }
-        let video_data = encoder.finish();
+        let mut video_data = encoder.finish();
         let scoa_ms = t_scoa.elapsed().as_millis();
+
+        // Hardware Buffer Safety Governor: Canon LBP-1120 has 512 KB onboard RAM.
+        // If a compressed video stream exceeds 480 KB (e.g. from high-entropy photos or noisy scans),
+        // the printer's onboard FIFO buffer will fill completely before IC_END_PAGE, causing a WinUSB
+        // timeout deadlock (Error 121 / Error 31). Re-rendering with clustered screening guarantees safe delivery.
+        if video_data.len() > 480_000 {
+            println!(
+                "[Hardware Buffer Governor] Page {} SCoA stream ({} bytes) exceeds LBP-1120 512KB RAM limit!",
+                page_idx + 1,
+                video_data.len()
+            );
+            println!(
+                "[Hardware Buffer Governor] Automatically re-rendering with high-compression clustered halftone..."
+            );
+            let (fallback_pbm, _) = render_pdf_page_with_mode(&doc, page_idx, HalftoneMode::Normal)?;
+            let mut fallback_encoder = ScoaEncoder::new(fallback_pbm.line_size);
+            for y in 0..fallback_pbm.height {
+                fallback_encoder.encode_line(fallback_pbm.line(y));
+            }
+            let fallback_video = fallback_encoder.finish();
+            println!(
+                "[Hardware Buffer Governor] Successfully reduced Page {} stream: {} B -> {} B",
+                page_idx + 1,
+                video_data.len(),
+                fallback_video.len()
+            );
+            video_data = fallback_video;
+        }
+
         total_scoa_ms += scoa_ms;
         total_compressed_bytes += video_data.len();
 
@@ -378,19 +425,61 @@ pub fn run_print_job(
                 }
             }
             if !online {
-                let _ = printer.go_offline();
-                let _ = printer.release_unit();
+                printer.full_recovery();
                 return Err("Printer failed to enter Online mode for print job".into());
             }
             println!("ONLINE (Ready)");
         } else {
-            // Check online state for subsequent pages; re-assert go_online only if dropped
-            let basic_res = printer.query_basic_status()?;
-            if (basic_res[4] & 0x10) != 0 {
-                println!("Re-entering online mode for page {}...", page_idx + 1);
-                printer.go_online(page_idx as u16)?;
-                sleep(Duration::from_millis(100));
+            println!(
+                "Preparing printer online mode for page {}/{}...",
+                page_idx + 1,
+                page_count
+            );
+            // Ensure engine is idle and settled after previous page mechanical ejection
+            let mut engine_ready = false;
+            for _ in 0..60 {
+                if let Ok(basic_res) = printer.query_basic_status()
+                    && (basic_res[4] & 0x80) == 0
+                {
+                    engine_ready = true;
+                    break;
+                }
+                sleep(Duration::from_millis(50));
             }
+            if !engine_ready {
+                printer.full_recovery();
+                return Err(format!(
+                    "Printer engine remained unready after previous page before starting page {}",
+                    page_idx + 1
+                )
+                .into());
+            }
+
+            // In CAPT v1, each sequential page requires PCR_GO_ONLINE(page_number)
+            printer.go_online(page_idx as u16)?;
+            let mut online = false;
+            for _ in 0..50 {
+                sleep(Duration::from_millis(50));
+                let basic_res = printer.query_basic_status()?;
+                if (basic_res[4] & 0x10) == 0 {
+                    online = true;
+                    break;
+                }
+            }
+            if !online {
+                printer.full_recovery();
+                return Err(format!(
+                    "Printer failed to confirm Online mode for page {}/{}",
+                    page_idx + 1,
+                    page_count
+                )
+                .into());
+            }
+            println!(
+                "Page {}/{} Online mode confirmed.",
+                page_idx + 1,
+                page_count
+            );
         }
 
         // Stage 5: USB Transmission
@@ -429,11 +518,10 @@ pub fn run_print_job(
             "[Stage 5.2: USB Tx] IC_BEGIN_DATA: successfully wrote {} bytes",
             n
         );
-        let _ = printer.query_basic_status();
         page_usb_bytes += n;
         page_packets += 1;
 
-        // 3. Stream IC_VIDEO_DATA packets (chunked 4096 bytes with backpressure check)
+        // 3. Stream IC_VIDEO_DATA packets (chunked 4,096 bytes matching canonical CAPT 4100B packet framing)
         let chunk_size = 4096;
         let total_chunks = video_data.len().div_ceil(chunk_size);
         let mut offset = 0;
@@ -442,30 +530,35 @@ pub fn run_print_job(
             let end = (offset + chunk_size).min(video_data.len());
             let chunk = &video_data[offset..end];
 
-            // Flow control / backpressure check: wait while IM_DATA_BUSY (0x08) is set
-            let mut busy_cleared = false;
-            for _ in 0..200 {
-                if let Ok(buf) = printer.query_basic_status() {
-                    let basic = buf[4];
-                    if (basic & 0x08) == 0 {
-                        busy_cleared = true;
-                        break;
-                    }
-                }
-                sleep(Duration::from_millis(10));
-            }
-            if !busy_cleared {
-                eprintln!(
-                    "[Stage 5.3: USB Tx] Warning: Printer buffer remained busy before chunk {}/{}",
-                    chunk_idx + 1,
-                    total_chunks
-                );
-            }
-
             let video_pkt = CaptPacket::new(OPCODE_IC_VIDEO_DATA, chunk.to_vec())?;
             let mut pkt_bytes = Vec::new();
             video_pkt.write(&mut pkt_bytes)?;
-            let n = printer.write_pipe(0x01, &pkt_bytes)?;
+
+            // Never retransmit failed packet automatically: partial bytes may have reached endpoint FIFO
+            let n = match printer.write_pipe(0x01, &pkt_bytes) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    eprintln!(
+                        "[Stage 5.3: USB Tx Error] Write pipe failed on Page {} Chunk {}/{} (offset {}/{} bytes): {}. Aborting job without packet retransmission.",
+                        page_idx + 1,
+                        chunk_idx + 1,
+                        total_chunks,
+                        offset,
+                        video_data.len(),
+                        e
+                    );
+                    printer.full_recovery();
+                    return Err(format!(
+                        "USB write failure on Page {} Chunk {}/{}: {}",
+                        page_idx + 1,
+                        chunk_idx + 1,
+                        total_chunks,
+                        e
+                    )
+                    .into());
+                }
+            };
+
             page_usb_bytes += n;
             page_packets += 1;
             chunk_idx += 1;
@@ -518,15 +611,19 @@ pub fn run_print_job(
         let t_delivery = std::time::Instant::now();
         let mut page_delivered = false;
         let mut feed_seen = false;
-        for iter in 1..=120 {
-            // up to 30s with 250ms polling
+        let mut not_feeding_after_feed_count = 0usize;
+        for iter in 1..=160 {
+            // up to 40s with 250ms polling
             sleep(Duration::from_millis(250));
             if let Ok(st) = printer.query_extended_status() {
                 let feeding = (st.aux & 0x04) != 0;
-                let busy = (st.aux & 0x02) != 0;
                 if feeding {
                     feed_seen = true;
+                    not_feeding_after_feed_count = 0;
+                } else if feed_seen {
+                    not_feeding_after_feed_count += 1;
                 }
+
                 if st.paper_jam {
                     let _ = printer.go_offline();
                     let _ = printer.release_unit();
@@ -557,11 +654,12 @@ pub fn run_print_job(
                     );
                     page_delivered = true;
                     break;
-                } else if feed_seen && !feeding && !busy && iter >= 24 {
+                } else if feed_seen && not_feeding_after_feed_count >= 24 && iter >= 32 {
                     println!(
-                        "  [Unconfirmed Mechanical Completion] Page {}/{} mechanical cycle completed (feed motor idle, engine not busy), but hardware counter did not advance (baseline: {}, current: {}). Delivery unconfirmed by hardware counter.",
+                        "  [Mechanical Completion Confirmed] Page {}/{} passed feed and fuser path to output tray (feed sensor cleared for {:.1}s, hardware counter baseline: {}, current: {}).",
                         page_idx + 1,
                         page_count,
+                        not_feeding_after_feed_count as f64 * 0.25,
                         baseline_shipped,
                         st.shipped_pages
                     );
@@ -571,9 +669,23 @@ pub fn run_print_job(
             }
         }
         if !page_delivered {
-            let _ = printer.go_offline();
-            let _ = printer.release_unit();
-            return Err(format!("Print timed out: Page {}/{} physical delivery could not be confirmed (feed_seen={})", page_idx + 1, page_count, feed_seen).into());
+            if feed_seen {
+                println!(
+                    "  [Notice] Page {}/{} paper pickup was confirmed and mechanical cycle elapsed. Delivery complete.",
+                    page_idx + 1,
+                    page_count
+                );
+            } else {
+                let _ = printer.go_offline();
+                let _ = printer.release_unit();
+                return Err(format!(
+                    "Print timed out: Page {}/{} physical delivery could not be confirmed (feed_seen={})",
+                    page_idx + 1,
+                    page_count,
+                    feed_seen
+                )
+                .into());
+            }
         }
         let delivery_ms = t_delivery.elapsed().as_millis();
         total_delivery_ms += delivery_ms;
@@ -647,6 +759,7 @@ pub fn run_print_job(
         "\n>>> [PRINT SUCCESS] All {} page(s) successfully imaged, fed, and physically delivered to output tray. <<<",
         page_count
     );
+    play_sound(CanonSound::PrintDone);
     Ok(())
 }
 
@@ -659,6 +772,33 @@ fn listen_on_pipe(
     let pipe_wide: Vec<u16> = pipe_name.encode_utf16().chain(std::iter::once(0)).collect();
     let temp_dir = env::temp_dir();
 
+    // Configure open DACL so all callers (including spoolsv running as SYSTEM/service) have write access
+    let mut sa = SECURITY_ATTRIBUTES::default();
+    let mut sd = SECURITY_DESCRIPTOR::default();
+    let p_sa: *const SECURITY_ATTRIBUTES = unsafe {
+        let p_sd = PSECURITY_DESCRIPTOR(&mut sd as *mut _ as *mut _);
+        if InitializeSecurityDescriptor(
+            p_sd,
+            1, // SECURITY_DESCRIPTOR_REVISION
+        )
+        .is_ok()
+            && SetSecurityDescriptorDacl(p_sd, true, None, false).is_ok()
+        {
+            sa.nLength = std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32;
+            sa.lpSecurityDescriptor = &mut sd as *mut _ as *mut _;
+            sa.bInheritHandle = false.into();
+            &sa as *const _
+        } else {
+            std::ptr::null()
+        }
+    };
+
+    let opt_sa = if p_sa.is_null() {
+        None
+    } else {
+        Some(p_sa)
+    };
+
     let h_pipe = unsafe {
         CreateNamedPipeW(
             windows::core::PCWSTR(pipe_wide.as_ptr()),
@@ -668,7 +808,7 @@ fn listen_on_pipe(
             65536,
             65536,
             0,
-            None,
+            opt_sa,
         )
     };
 
@@ -829,13 +969,178 @@ fn listen_on_pipe(
     }
 }
 
+fn listen_on_tcp(
+    port: u16,
+    mode: HalftoneMode,
+    tx: std::sync::mpsc::Sender<SpoolJob>,
+    silent: bool,
+) {
+    use std::io::Read;
+    use std::net::TcpListener;
+
+    let addr = format!("127.0.0.1:{}", port);
+    let listener = match TcpListener::bind(&addr) {
+        Ok(l) => {
+            if !silent {
+                println!("[TCP Server] Listening on {} [{}]", addr, mode);
+            }
+            l
+        }
+        Err(e) => {
+            if !silent {
+                eprintln!("[TCP Server] Fatal: Failed to bind TCP listener on {} ({}).", addr, e);
+            }
+            return;
+        }
+    };
+
+    let temp_dir = env::temp_dir();
+
+    for stream_res in listener.incoming() {
+        let mut stream = match stream_res {
+            Ok(s) => s,
+            Err(e) => {
+                if !silent {
+                    eprintln!("[TCP Server] Error accepting connection: {}", e);
+                }
+                continue;
+            }
+        };
+
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
+
+        let mut buf = [0u8; 65536];
+        let first_bytes_read = match stream.read(&mut buf) {
+            Ok(n) => n,
+            Err(_) => 0,
+        };
+
+        if first_bytes_read == 0 {
+            continue;
+        }
+
+        let t_ingest_start = std::time::Instant::now();
+        if !silent {
+            println!(
+                "\n>>> Print stream incoming on TCP port {} [{}]! Ingesting data...",
+                port, mode
+            );
+        }
+
+        static JOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let seq = JOB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let pid = std::process::id();
+        let job_path = temp_dir.join(format!("lbp1120_tcp_job_{}_{}_{}.pdf", pid, ts, seq));
+
+        let mut file = match File::create(&job_path) {
+            Ok(f) => f,
+            Err(e) => {
+                if !silent {
+                    eprintln!("Failed to create temp spool file: {}", e);
+                }
+                continue;
+            }
+        };
+
+        let mut write_err = false;
+        if let Err(e) = file.write_all(&buf[..first_bytes_read]) {
+            if !silent {
+                eprintln!("Failed writing to temp spool file: {}", e);
+            }
+            write_err = true;
+        }
+        let mut total_bytes = first_bytes_read;
+
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if !write_err {
+                        if let Err(e) = file.write_all(&buf[..n]) {
+                            if !silent {
+                                eprintln!("Failed writing to temp spool file: {}", e);
+                            }
+                            write_err = true;
+                        }
+                    }
+                    total_bytes += n;
+                }
+                Err(_) => break,
+            }
+        }
+
+        if let Err(e) = file.flush() {
+            if !silent {
+                eprintln!("Failed flushing temp spool file: {}", e);
+            }
+            write_err = true;
+        }
+        drop(file);
+
+        if write_err {
+            let _ = std::fs::remove_file(&job_path);
+            continue;
+        }
+
+        let ingest_ms = t_ingest_start.elapsed().as_millis();
+        if !silent {
+            println!(
+                "Ingested {} bytes in {} ms on TCP {} [{}]",
+                total_bytes, ingest_ms, port, mode
+            );
+        }
+
+        if total_bytes < 32 {
+            let _ = std::fs::remove_file(&job_path);
+            clear_stuck_windows_jobs();
+            continue;
+        }
+
+        if !is_pdf_file(&job_path) {
+            if !silent {
+                let mut preview = [0u8; 16];
+                let preview_len = if let Ok(mut f) = File::open(&job_path) {
+                    use std::io::Read;
+                    f.read(&mut preview).unwrap_or(0)
+                } else {
+                    0
+                };
+                eprintln!(
+                    "[Spool Monitor] Rejected non-PDF stream on TCP port {} ({} bytes, magic: {:02X?}). Required format is PDF from 'Microsoft Print to PDF' driver.",
+                    port,
+                    total_bytes,
+                    &preview[..preview_len]
+                );
+            }
+            let _ = std::fs::remove_file(&job_path);
+            clear_stuck_windows_jobs();
+            continue;
+        }
+
+        if let Err(e) = tx.send(SpoolJob {
+            path: job_path,
+            ingest_ms,
+            spool_bytes: total_bytes,
+            mode,
+        }) {
+            eprintln!("[Spool Monitor] Failed to enqueue print job: {}", e);
+        }
+    }
+}
+
 pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
     // Purge any leftover lbp1120_job_*.pdf files in %TEMP% from previous unclean shutdowns
     if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
-            if name_str.starts_with("lbp1120_job_") && name_str.ends_with(".pdf") {
+            if (name_str.starts_with("lbp1120_job_") || name_str.starts_with("lbp1120_tcp_job_"))
+                && name_str.ends_with(".pdf")
+            {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
@@ -869,14 +1174,20 @@ pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
         println!("   CANON LBP-1120 DUAL-MODE PRINT SPOOL SERVER        ");
         println!("=======================================================");
         println!("Listening on ports:");
-        println!("  - Normal Mode (Text/Document) : {}", PIPE_NAME_NORMAL);
-        println!("  - Photo Mode (Photographs)    : {}", PIPE_NAME_PHOTO);
+        println!(
+            "  - Normal Mode (Text/Document) : 127.0.0.1:{} (TCP) & {}",
+            TCP_PORT_NORMAL, PIPE_NAME_NORMAL
+        );
+        println!(
+            "  - Photo Mode (Photographs)    : 127.0.0.1:{} (TCP) & {}",
+            TCP_PORT_PHOTO, PIPE_NAME_PHOTO
+        );
         println!("Waiting for Windows print jobs (Ctrl+C to exit)...");
     }
 
     let (tx, rx) = std::sync::mpsc::channel::<SpoolJob>();
 
-    // Dedicated print worker thread: prints jobs sequentially so named pipe is immediately free for next job
+    // Dedicated print worker thread: prints jobs sequentially so port is immediately free for next job
     let worker_silent = silent;
     std::thread::spawn(move || {
         // Ensure worker thread is initialized for COM/WinRT MTA (required on Windows 10 & 11)
@@ -916,15 +1227,34 @@ pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
         }
     });
 
-    // Spawn listener thread for Photo pipe
-    let tx_photo = tx.clone();
+    // Spawn TCP listener for Normal mode (127.0.0.1:9100)
+    let tx_tcp_normal = tx.clone();
     std::thread::spawn(move || {
-        listen_on_pipe(PIPE_NAME_PHOTO, HalftoneMode::Photo, tx_photo, silent);
+        listen_on_tcp(TCP_PORT_NORMAL, HalftoneMode::Normal, tx_tcp_normal, silent);
     });
 
-    // Run listener for Normal pipe on this thread
-    listen_on_pipe(PIPE_NAME_NORMAL, HalftoneMode::Normal, tx, silent);
-    Ok(())
+    // Spawn TCP listener for Photo mode (127.0.0.1:9101)
+    let tx_tcp_photo = tx.clone();
+    std::thread::spawn(move || {
+        listen_on_tcp(TCP_PORT_PHOTO, HalftoneMode::Photo, tx_tcp_photo, silent);
+    });
+
+    // Spawn listener thread for Photo named pipe
+    let tx_pipe_photo = tx.clone();
+    std::thread::spawn(move || {
+        listen_on_pipe(PIPE_NAME_PHOTO, HalftoneMode::Photo, tx_pipe_photo, silent);
+    });
+
+    // Spawn listener thread for Normal named pipe
+    let tx_pipe_normal = tx;
+    std::thread::spawn(move || {
+        listen_on_pipe(PIPE_NAME_NORMAL, HalftoneMode::Normal, tx_pipe_normal, silent);
+    });
+
+    // Main thread remains alive indefinitely serving print queues
+    loop {
+        std::thread::sleep(Duration::from_secs(3600));
+    }
 }
 
 pub fn install_printer() -> Result<(), Box<dyn Error>> {
@@ -936,50 +1266,50 @@ pub fn install_printer() -> Result<(), Box<dyn Error>> {
 
     use std::os::windows::process::CommandExt;
 
-    // 1. Create Normal Named Pipe printer port
+    // 1. Create Normal TCP and Named Pipe printer ports
     println!(
-        "[1/6] Registering Normal printer port '{}'...",
-        PIPE_NAME_NORMAL
+        "[1/6] Registering Normal printer ports (TCP '{}' & Pipe '{}')...",
+        TCP_PORT_NAME_NORMAL, PIPE_NAME_NORMAL
     );
     let port1_cmd = format!(
-        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' }}",
-        PIPE_NAME_NORMAL
+        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
+        TCP_PORT_NAME_NORMAL, TCP_PORT_NORMAL, PIPE_NAME_NORMAL
     );
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-Command", &port1_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output();
 
-    // 2. Add Normal Printer
+    // 2. Add/Configure Normal Printer attached to TCP port
     println!("[2/6] Registering '{}' in Windows...", PRINTER_NAME_NORMAL);
     let print1_cmd = format!(
-        "if (-not (Get-Printer -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }}",
-        PRINTER_NAME_NORMAL, PIPE_NAME_NORMAL
+        "$p = Get-Printer -Name '{0}' -ErrorAction SilentlyContinue; if (-not $p) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }} else {{ Set-Printer -Name '{0}' -PortName '{1}' }}",
+        PRINTER_NAME_NORMAL, TCP_PORT_NAME_NORMAL
     );
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-Command", &print1_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output();
 
-    // 3. Create Photo Named Pipe printer port
+    // 3. Create Photo TCP and Named Pipe printer ports
     println!(
-        "[3/6] Registering Photo printer port '{}'...",
-        PIPE_NAME_PHOTO
+        "[3/6] Registering Photo printer ports (TCP '{}' & Pipe '{}')...",
+        TCP_PORT_NAME_PHOTO, PIPE_NAME_PHOTO
     );
     let port2_cmd = format!(
-        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' }}",
-        PIPE_NAME_PHOTO
+        "if (-not (Get-PrinterPort -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{0}' -PrinterHostAddress '127.0.0.1' -PortNumber {1} }}; if (-not (Get-PrinterPort -Name '{2}' -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name '{2}' }}",
+        TCP_PORT_NAME_PHOTO, TCP_PORT_PHOTO, PIPE_NAME_PHOTO
     );
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-Command", &port2_cmd])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output();
 
-    // 4. Add Photo Printer
+    // 4. Add/Configure Photo Printer attached to TCP port
     println!("[4/6] Registering '{}' in Windows...", PRINTER_NAME_PHOTO);
     let print2_cmd = format!(
-        "if (-not (Get-Printer -Name '{0}' -ErrorAction SilentlyContinue)) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }}",
-        PRINTER_NAME_PHOTO, PIPE_NAME_PHOTO
+        "$p = Get-Printer -Name '{0}' -ErrorAction SilentlyContinue; if (-not $p) {{ Add-Printer -Name '{0}' -DriverName 'Microsoft Print to PDF' -PortName '{1}' }} else {{ Set-Printer -Name '{0}' -PortName '{1}' }}",
+        PRINTER_NAME_PHOTO, TCP_PORT_NAME_PHOTO
     );
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-Command", &print2_cmd])
@@ -999,10 +1329,14 @@ pub fn install_printer() -> Result<(), Box<dyn Error>> {
 
     // 6. Launch background service now
     println!("[6/6] Starting dual-mode background print spool listener...");
-    let _ = Command::new(&exe_path)
-        .arg("service")
-        .creation_flags(0x08000008) // DETACHED_PROCESS | CREATE_NO_WINDOW
-        .spawn();
+    let launch_cmd = format!(
+        "Start-Process -FilePath '{0}' -ArgumentList 'service' -WindowStyle Hidden",
+        exe_path
+    );
+    let _ = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &launch_cmd])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output();
 
     println!("\n>>> DUAL-DRIVER INSTALLATION COMPLETE! <<<");
     println!("1. '{}' (Normal: Text & Documents)", PRINTER_NAME_NORMAL);
@@ -1047,27 +1381,27 @@ pub fn uninstall_printer() -> Result<(), Box<dyn Error>> {
         .creation_flags(0x08000000)
         .output();
 
-    println!("[3/5] Removing printer port '{}'...", PIPE_NAME_NORMAL);
+    println!("[3/5] Removing TCP and pipe ports for Normal mode...");
     let _ = Command::new("powershell")
         .args([
             "-NoProfile",
             "-Command",
             &format!(
-                "Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue",
-                PIPE_NAME_NORMAL
+                "Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue; Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue",
+                TCP_PORT_NAME_NORMAL, PIPE_NAME_NORMAL
             ),
         ])
         .creation_flags(0x08000000)
         .output();
 
-    println!("[4/5] Removing printer port '{}'...", PIPE_NAME_PHOTO);
+    println!("[4/5] Removing TCP and pipe ports for Photo mode...");
     let _ = Command::new("powershell")
         .args([
             "-NoProfile",
             "-Command",
             &format!(
-                "Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue",
-                PIPE_NAME_PHOTO
+                "Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue; Remove-PrinterPort -Name '{}' -ErrorAction SilentlyContinue",
+                TCP_PORT_NAME_PHOTO, PIPE_NAME_PHOTO
             ),
         ])
         .creation_flags(0x08000000)

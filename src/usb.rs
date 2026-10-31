@@ -150,6 +150,151 @@ pub struct ExtendedStatusReport {
     pub printed_pages: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VideoReadiness {
+    /// Printer is online, error-free, and accepting video data.
+    Ready,
+    /// Printer buffer is temporarily busy or processing; transmission should wait.
+    Busy,
+    /// Fatal device error bit (0x80) is asserted or opcode mismatch.
+    DeviceError(u8),
+    /// Printer is offline (bit 0x10 asserted).
+    Offline(u8),
+}
+
+#[derive(Debug)]
+pub enum ReadinessWaitError {
+    /// Readiness wait expired without the printer confirming Ready.
+    Timeout { last_status: Option<[u8; 6]> },
+    /// Printer reported a fatal device error (e.g. error bit 0x80).
+    DeviceError { status: [u8; 6] },
+    /// Printer transitioned to offline (bit 0x10).
+    Offline { status: [u8; 6] },
+    /// Communication failure while querying printer status.
+    QueryFailed { last_error: io::Error },
+}
+
+impl std::fmt::Display for ReadinessWaitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Timeout { last_status } => {
+                write!(
+                    f,
+                    "Readiness wait timed out (last raw status: {:?})",
+                    last_status.map(|b| format!("0x{:02X} [all: {:02X?}]", b[4], b))
+                )
+            }
+            Self::DeviceError { status } => {
+                write!(
+                    f,
+                    "Printer reported fatal device error: basic register 0x{:02X} (packet: {:02X?})",
+                    status[4], status
+                )
+            }
+            Self::Offline { status } => {
+                write!(
+                    f,
+                    "Printer went offline: basic register 0x{:02X} (packet: {:02X?})",
+                    status[4], status
+                )
+            }
+            Self::QueryFailed { last_error } => {
+                write!(f, "Failed to query basic status: {}", last_error)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReadinessWaitError {}
+
+/// Evaluates the 6-byte response to `PCR_GET_BASIC_STATUS` (0xE0A0).
+///
+/// Response structure:
+/// - bytes 0..2: Opcode (expected 0xE0A0)
+/// - bytes 2..4: Packet size (expected 0x0006)
+/// - byte 4: Basic register:
+///   * Bit 7 (0x80): Device Error / Engine Fault (`CAPT_FL_BUSY` in CAPT v1 specs)
+///   * Bit 6 (0x40): Unit Free
+///   * Bit 4 (0x10): Offline (1 = Offline, 0 = Online)
+///   * Bit 2 (0x04): Buffer Full (`CAPT_FL_BUFFERFULL`)
+///   * Bit 1 (0x02): No Paper
+///   * Bit 0 (0x01): Engine Processing
+///   * Note: Bit 3 (0x08) is IEEE-1284 nFault / reserved in USB mode and MUST NOT be
+///     treated as a buffer busy flag without explicit protocol verification.
+/// - byte 5: Changed register
+pub fn evaluate_basic_status(buf: &[u8; 6]) -> VideoReadiness {
+    let opcode = u16::from_le_bytes([buf[0], buf[1]]);
+    if opcode != 0xE0A0 {
+        return VideoReadiness::DeviceError(buf[4]);
+    }
+    let basic = buf[4];
+    if (basic & 0x80) != 0 {
+        VideoReadiness::DeviceError(basic)
+    } else if (basic & 0x10) != 0 {
+        VideoReadiness::Offline(basic)
+    } else if (basic & 0x04) != 0 {
+        VideoReadiness::Busy
+    } else {
+        VideoReadiness::Ready
+    }
+}
+
+pub fn wait_for_video_readiness_with<F>(
+    max_attempts: usize,
+    poll_interval: std::time::Duration,
+    mut query_fn: F,
+) -> Result<[u8; 6], ReadinessWaitError>
+where
+    F: FnMut() -> io::Result<[u8; 6]>,
+{
+    let mut last_status = None;
+    let mut last_err = None;
+    let mut consecutive_query_failures = 0;
+
+    for _ in 0..max_attempts {
+        match query_fn() {
+            Ok(buf) => {
+                consecutive_query_failures = 0;
+                last_status = Some(buf);
+                match evaluate_basic_status(&buf) {
+                    VideoReadiness::Ready => return Ok(buf),
+                    VideoReadiness::Busy => {
+                        if !poll_interval.is_zero() {
+                            std::thread::sleep(poll_interval);
+                        }
+                    }
+                    VideoReadiness::DeviceError(_) => {
+                        return Err(ReadinessWaitError::DeviceError { status: buf });
+                    }
+                    VideoReadiness::Offline(_) => {
+                        return Err(ReadinessWaitError::Offline { status: buf });
+                    }
+                }
+            }
+            Err(e) => {
+                consecutive_query_failures += 1;
+                last_err = Some(e);
+                if consecutive_query_failures >= 5 {
+                    return Err(ReadinessWaitError::QueryFailed {
+                        last_error: last_err.unwrap(),
+                    });
+                }
+                if !poll_interval.is_zero() {
+                    std::thread::sleep(poll_interval);
+                }
+            }
+        }
+    }
+
+    if let Some(err) = last_err
+        && last_status.is_none()
+    {
+        Err(ReadinessWaitError::QueryFailed { last_error: err })
+    } else {
+        Err(ReadinessWaitError::Timeout { last_status })
+    }
+}
+
 pub struct UsbPrinter {
     file_handle: HANDLE,
     winusb_handle: PVOID,
@@ -240,20 +385,22 @@ impl UsbPrinter {
 
         // Configure default pipe policies
         unsafe {
-            let timeout: u32 = 5000;
+            let timeout_out: u32 = 30000;
             WinUsb_SetPipePolicy(
                 winusb,
                 0x01,
                 PIPE_TRANSFER_TIMEOUT,
                 4,
-                &timeout as *const _ as *const c_void,
+                &timeout_out as *const _ as *const c_void,
             );
+            // Bulk IN status read timeout: 3s (replies arrive in < 10ms; avoiding 30s hangs on unready printer)
+            let timeout_in: u32 = 3000;
             WinUsb_SetPipePolicy(
                 winusb,
                 0x82,
                 PIPE_TRANSFER_TIMEOUT,
                 4,
-                &timeout as *const _ as *const c_void,
+                &timeout_in as *const _ as *const c_void,
             );
 
             let allow_partial: u8 = 1;
@@ -520,26 +667,37 @@ impl UsbPrinter {
         let cmd = [0xa0, 0xa0, 0x04, 0x00];
         self.write_pipe(0x01, &cmd)?;
 
-        // First read: 6-byte header
-        let mut header = [0u8; 6];
-        self.read_pipe_exact(0x82, &mut header)?;
-
-        let total_size = u16::from_le_bytes([header[2], header[3]]);
-        if !(18..=64).contains(&total_size) {
+        let mut buf = [0u8; 64];
+        let mut total_read = self.read_pipe(0x82, &mut buf)?;
+        if total_read < 4 {
             return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Invalid extended status packet size: {} bytes (expected 18..=64)",
-                    total_size
-                ),
+                io::ErrorKind::UnexpectedEof,
+                "Extended status reply header truncated (< 4 bytes)",
             ));
         }
 
-        let payload_len = (total_size as usize) - 6;
-        let mut payload = vec![0u8; payload_len];
-        self.read_pipe_exact(0x82, &mut payload)?;
+        let total_size = u16::from_le_bytes([buf[2], buf[3]]) as usize;
+        if !(18..=64).contains(&total_size) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid extended status packet size: {} bytes (expected 18..=64)", total_size),
+            ));
+        }
 
-        Self::parse_extended_status(&header, &payload)
+        // If the USB controller returned only the header (e.g. 6 bytes), read the remaining bytes
+        while total_read < total_size {
+            let n = self.read_pipe(0x82, &mut buf[total_read..total_size])?;
+            if n == 0 {
+                break;
+            }
+            total_read += n;
+        }
+
+        let mut header = [0u8; 6];
+        header.copy_from_slice(&buf[0..6]);
+        let payload = &buf[6..total_read];
+
+        Self::parse_extended_status(&header, payload)
     }
 
     pub fn query_basic_status(&self) -> io::Result<[u8; 6]> {
@@ -621,7 +779,10 @@ impl UsbPrinter {
 
     pub fn full_recovery(&self) {
         let _ = self.reset_pipes();
+        // If the printer was left in video stream mode, send IC_END_PAGE to close the frame
+        let _ = self.write_pipe(0x01, &[0xa2, 0xd0, 0x04, 0x00]); // IC_END_PAGE (0xD0A2)
         let _ = self.clear_error();
+        let _ = self.clear_misprint();
         let _ = self.discard_data();
         let _ = self.go_offline();
         let _ = self.release_unit();
@@ -648,6 +809,14 @@ impl UsbPrinter {
             }
         }
         Ok(pipes)
+    }
+
+    pub fn wait_for_video_ready(
+        &self,
+        max_attempts: usize,
+        poll_interval: std::time::Duration,
+    ) -> Result<[u8; 6], ReadinessWaitError> {
+        wait_for_video_readiness_with(max_attempts, poll_interval, || self.query_basic_status())
     }
 }
 
@@ -917,5 +1086,149 @@ mod tests {
         let res = pipe.mock_read_exact(&mut buf);
         assert!(res.is_err());
         assert_eq!(res.unwrap_err().kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn test_readiness_evaluation_ready() {
+        // Opcode E0A0, size 0x0006, basic 0x40 (UnitFree=true, Online=true, No error, Buffer not full)
+        let ready_buf = [0xA0, 0xE0, 0x06, 0x00, 0x40, 0x00];
+        assert_eq!(evaluate_basic_status(&ready_buf), VideoReadiness::Ready);
+
+        // Basic 0x00 (Unit reserved/in job, Online=true, No error, Buffer not full)
+        let ready_buf_zero = [0xA0, 0xE0, 0x06, 0x00, 0x00, 0x00];
+        assert_eq!(
+            evaluate_basic_status(&ready_buf_zero),
+            VideoReadiness::Ready
+        );
+
+        // Verification of requirement 2: Bit 0x08 MUST NOT be assumed as busy indicator!
+        // When bit 0x08 is set (0x48), status must still evaluate to Ready!
+        let ready_buf_with_bit3 = [0xA0, 0xE0, 0x06, 0x00, 0x48, 0x00];
+        assert_eq!(
+            evaluate_basic_status(&ready_buf_with_bit3),
+            VideoReadiness::Ready
+        );
+    }
+
+    #[test]
+    fn test_readiness_evaluation_busy() {
+        // Basic 0x04 (CAPT_FL_BUFFERFULL - buffer full / busy)
+        let busy_buf = [0xA0, 0xE0, 0x06, 0x00, 0x04, 0x00];
+        assert_eq!(evaluate_basic_status(&busy_buf), VideoReadiness::Busy);
+    }
+
+    #[test]
+    fn test_readiness_evaluation_device_error() {
+        // Basic 0x80 (CAPT_FL_BUSY / Device error)
+        let err_buf = [0xA0, 0xE0, 0x06, 0x00, 0x80, 0x00];
+        assert_eq!(
+            evaluate_basic_status(&err_buf),
+            VideoReadiness::DeviceError(0x80)
+        );
+
+        // Invalid opcode should also trigger DeviceError
+        let bad_opcode = [0x00, 0x00, 0x06, 0x00, 0x00, 0x00];
+        assert_eq!(
+            evaluate_basic_status(&bad_opcode),
+            VideoReadiness::DeviceError(0x00)
+        );
+    }
+
+    #[test]
+    fn test_readiness_evaluation_offline() {
+        // Basic 0x10 (Offline)
+        let offline_buf = [0xA0, 0xE0, 0x06, 0x00, 0x10, 0x00];
+        assert_eq!(
+            evaluate_basic_status(&offline_buf),
+            VideoReadiness::Offline(0x10)
+        );
+    }
+
+    #[test]
+    fn test_wait_for_video_readiness_ready_immediate() {
+        let ready_buf = [0xA0, 0xE0, 0x06, 0x00, 0x40, 0x00];
+        let mut calls = 0;
+        let res = wait_for_video_readiness_with(10, std::time::Duration::ZERO, || {
+            calls += 1;
+            Ok(ready_buf)
+        });
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), ready_buf);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn test_wait_for_video_readiness_busy_then_ready() {
+        let busy_buf = [0xA0, 0xE0, 0x06, 0x00, 0x04, 0x00];
+        let ready_buf = [0xA0, 0xE0, 0x06, 0x00, 0x40, 0x00];
+        let mut calls = 0;
+        let res = wait_for_video_readiness_with(10, std::time::Duration::ZERO, || {
+            calls += 1;
+            if calls < 4 {
+                Ok(busy_buf)
+            } else {
+                Ok(ready_buf)
+            }
+        });
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), ready_buf);
+        assert_eq!(calls, 4);
+    }
+
+    #[test]
+    fn test_wait_for_video_readiness_timeout_expiration() {
+        let busy_buf = [0xA0, 0xE0, 0x06, 0x00, 0x04, 0x00];
+        let mut calls = 0;
+        let res = wait_for_video_readiness_with(5, std::time::Duration::ZERO, || {
+            calls += 1;
+            Ok(busy_buf)
+        });
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ReadinessWaitError::Timeout { last_status } => {
+                assert_eq!(last_status, Some(busy_buf));
+            }
+            other => panic!("Expected Timeout error, got {:?}", other),
+        }
+        assert_eq!(calls, 5);
+    }
+
+    #[test]
+    fn test_wait_for_video_readiness_query_failure() {
+        let mut calls = 0;
+        let res = wait_for_video_readiness_with(10, std::time::Duration::ZERO, || {
+            calls += 1;
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "USB read error",
+            ))
+        });
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ReadinessWaitError::QueryFailed { last_error } => {
+                assert_eq!(last_error.kind(), io::ErrorKind::ConnectionReset);
+            }
+            other => panic!("Expected QueryFailed error, got {:?}", other),
+        }
+        assert_eq!(calls, 5);
+    }
+
+    #[test]
+    fn test_wait_for_video_readiness_fatal_error_abort() {
+        let err_buf = [0xA0, 0xE0, 0x06, 0x00, 0x80, 0x00];
+        let mut calls = 0;
+        let res = wait_for_video_readiness_with(10, std::time::Duration::ZERO, || {
+            calls += 1;
+            Ok(err_buf)
+        });
+        assert!(res.is_err());
+        match res.unwrap_err() {
+            ReadinessWaitError::DeviceError { status } => {
+                assert_eq!(status, err_buf);
+            }
+            other => panic!("Expected DeviceError, got {:?}", other),
+        }
+        // Must abort immediately on first attempt without wasting retries
+        assert_eq!(calls, 1);
     }
 }

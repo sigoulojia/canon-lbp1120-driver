@@ -1,3 +1,5 @@
 /target
 *.capt
 *.pbm
+*.bmp
+*.log
