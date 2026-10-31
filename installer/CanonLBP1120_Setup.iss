@@ -1,28 +1,61 @@
-; Inno Setup Commercial Installer Script for Canon LaserShot LBP-1120 Modern x64 Driver Suite
+; ==============================================================================
+; Inno Setup 6 Script for Canon LaserShot LBP-1120 Open Source Driver Suite
+; Generates standalone executable installer: CanonLBP1120_Setup_v1.0.0.exe
+; ==============================================================================
+
+#define MyAppName "Canon LaserShot LBP-1120 Driver Suite"
+#define MyAppVersion "1.0.0"
+#define MyAppPublisher "Autonomous Hardware Research Team"
+#define MyAppExeName "canon-lbp1120-service.exe"
+
 [Setup]
-AppId={{8F9E4A21-1120-4C89-A0A0-CANONLBP1120}
-AppName=Canon LaserShot LBP-1120 Modern x64 Driver & Management Suite
-AppVersion=2.0.0
-AppPublisher=Open CAPT Hardware Preservation Project
+AppId={{5C7F4349-D8D8-4BC4-B972-78A7E144DC3E}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\CanonLBP1120
-DefaultGroupName=Canon LaserShot LBP-1120
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=admin
-OutputBaseFilename=Canon_LBP1120_x64_Setup_v2.0.0
+DefaultGroupName={#MyAppName}
+AllowNoIcons=yes
+OutputDir=.
+OutputBaseFilename=CanonLBP1120_Setup_v1.0.0
 Compression=lzma2/ultra64
 SolidCompression=yes
-UninstallDisplayIcon={app}\capt-poc.exe
+WizardStyle=modern
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64 compatible
+DisableDirPage=no
+DisableProgramGroupPage=yes
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "..\target\release\capt-poc.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\assets\Cap3ht.bin"; DestDir: "{app}\assets"; Flags: ignoreversion
-Source: "..\assets\sounds\*.wav"; DestDir: "{app}\assets\sounds"; Flags: ignoreversion
-Source: "..\fixtures\test-3-pages.pdf"; DestDir: "{app}\fixtures"; Flags: ignoreversion
+; Core binary and voice prompts
+Source: "..\target\release\capt-poc.exe"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
+Source: "..\reference\drivers\LBP1120_WinXP\CAP3ZWAV.BIN"; DestDir: "{app}"; Flags: ignoreversion
+Source: "CanonLBP1120_WinUSB.inf"; DestDir: "{app}\driver"; Flags: ignoreversion
+
+[Icons]
+Name: "{group}\Printer Status Diagnostics"; Filename: "{app}\{#MyAppExeName}"; Parameters: "probe"; IconFilename: "{sys}\shell32.dll"; IconIndex: 22
+Name: "{group}\Reset Printer State"; Filename: "{app}\{#MyAppExeName}"; Parameters: "reset"; IconFilename: "{sys}\shell32.dll"; IconIndex: 238
+Name: "{group}\Print 6-Zone Calibration Page"; Filename: "{app}\{#MyAppExeName}"; Parameters: "generate-calibration"; IconFilename: "{sys}\shell32.dll"; IconIndex: 16
+Name: "{group}\View Service Log"; Filename: "{cmd}"; Parameters: "/c start notepad.exe C:\ProgramData\CanonLBP1120\service.log"; IconFilename: "{sys}\shell32.dll"; IconIndex: 70
+Name: "{group}\Uninstall Driver Suite"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\capt-poc.exe"; Parameters: "install"; StatusMsg: "Registering Canon LBP-1120 Print Queues, TCP/Named Pipe Ports, and Background Service..."; Flags: runhidden waituntilterminated
-Filename: "{app}\capt-poc.exe"; Parameters: "probe"; Description: "Verify USB Hardware Connection (04A9:262B)"; Flags: postinstall nowait skipifsilent
+; 1. Stage and install WinUSB driver package via PnPUtil
+Filename: "{sys}\pnputil.exe"; Parameters: "/add-driver ""{app}\driver\CanonLBP1120_WinUSB.inf"" /install"; Flags: runhidden waituntilterminated
+; 2. Configure printer queues and ports
+Filename: "{app}\{#MyAppExeName}"; Parameters: "install"; Flags: runhidden waituntilterminated
+; 3. Register and start SCM background Windows Service
+Filename: "{app}\{#MyAppExeName}"; Parameters: "install-service"; Flags: runhidden waituntilterminated
 
 [UninstallRun]
-Filename: "{app}\capt-poc.exe"; Parameters: "uninstall"; StatusMsg: "Removing Print Queues, Ports, and Background Service..."; Flags: runhidden waituntilterminated
+; 1. Stop and remove SCM service
+Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall-service"; Flags: runhidden waituntilterminated
+; 2. Remove printer queues and ports
+Filename: "{app}\{#MyAppExeName}"; Parameters: "uninstall"; Flags: runhidden waituntilterminated
+
+[UninstallDelete]
+Type: files; Name: "C:\ProgramData\CanonLBP1120\service.log"
+Type: dirifempty; Name: "C:\ProgramData\CanonLBP1120"

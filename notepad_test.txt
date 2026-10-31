@@ -1,0 +1,14 @@
+=======================================================
+CANON LASERSHOT LBP-1120 NATIVE PRINT PIPELINE TEST
+=======================================================
+Printer Model : Canon LaserShot LBP-1120 (USB VID 04A9, PID 262B)
+Printed From  : Windows Notepad (via Win32 GDI Spooler)
+Spool Driver  : Microsoft Print To PDF -> TCP 9100 (Normal Mode)
+Render Engine : WinRT Direct2D @ 600 DPI (4,736 x 6,778 pixels)
+Compression   : Canon CAPT 1.0 SCoA 2D Delta + RLE Encoder
+Physical Port : WinUSB Bulk OUT 0x01 / Bulk IN 0x82
+
+Verification Date: October 31, 2026
+Test Status: PASS - No Save As Dialog - Clean Spool Stream
+=======================================================
+

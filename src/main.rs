@@ -9,6 +9,7 @@ mod scoa;
 pub mod sound;
 mod spool;
 mod usb;
+pub mod service;
 
 use pbm::PbmImage;
 use protocol::{
@@ -754,6 +755,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Usage:");
         println!("  capt-poc install                          - Install dual-mode Windows print queues & start service");
         println!("  capt-poc uninstall                        - Remove Windows print queues, ports, and service");
+        println!("  capt-poc install-service                  - Register & start native SCM Windows Service");
+        println!("  capt-poc uninstall-service                - Stop & unregister native SCM Windows Service");
+        println!("  capt-poc service-run                      - Run under SCM (called by Windows Service Manager)");
         println!("  capt-poc spool-server                     - Run foreground dual-mode spool server (TCP & Pipes)");
         println!("  capt-poc service                          - Run background detached spool server");
         println!("  capt-poc print-pdf <input.pdf> [normal|photo] - Print a PDF directly to physical printer");
@@ -778,6 +782,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         "uninstall" => {
             spool::uninstall_printer()?;
+        }
+        "service-run" => {
+            service::run_scm_service()?;
+        }
+        "install-service" => {
+            service::install_windows_service()?;
+        }
+        "uninstall-service" => {
+            service::uninstall_windows_service()?;
         }
         "spool-server" => {
             spool::run_pipe_server(false)?;

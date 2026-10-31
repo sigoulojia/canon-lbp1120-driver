@@ -1266,10 +1266,11 @@ pub fn run_pipe_server(silent: bool) -> Result<(), Box<dyn Error>> {
         listen_on_pipe(PIPE_NAME_NORMAL, HalftoneMode::Normal, tx_pipe_normal, silent);
     });
 
-    // Main thread remains alive indefinitely serving print queues
-    loop {
-        std::thread::sleep(Duration::from_secs(3600));
+    // Main thread remains alive serving print queues until shutdown requested
+    while !crate::service::SERVICE_SHUTDOWN_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_millis(500));
     }
+    Ok(())
 }
 
 pub fn install_printer() -> Result<(), Box<dyn Error>> {
